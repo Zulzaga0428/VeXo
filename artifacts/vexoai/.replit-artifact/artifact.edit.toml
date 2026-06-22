@@ -1,0 +1,17 @@
+kind = "web"
+  previewPath = "/"
+  title = "VexoAI Studio"
+  version = "1.0.0"
+  id = "vexoai-studio-001"
+
+  [[services]]
+  localPort = 3000
+  name = "VexoAI"
+  paths = ["/"]
+
+  [services.development]
+  run = "pnpm --filter @workspace/vexoai run dev"
+
+  [services.development.env]
+  PORT = "3000"
+  

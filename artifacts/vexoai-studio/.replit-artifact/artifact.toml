@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/vexoai/"
+title = "VexoAI Studio"
+version = "1.0.0"
+id = "artifacts/vexoai-studio"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/vexoai/" ]
+localPort = 26030
+
+[services.development]
+run = "pnpm --filter @workspace/vexoai-studio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/vexoai-studio", "run", "build" ]
+publicDir = "artifacts/vexoai-studio/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26030"
+BASE_PATH = "/vexoai/"

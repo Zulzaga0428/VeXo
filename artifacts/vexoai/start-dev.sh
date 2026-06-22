@@ -1,0 +1,47 @@
+#!/bin/sh
+# Extract clean values from Replit secrets (they come as "KEY=value" in the env)
+get_val() {
+  printenv "$1" | sed "s/^${1}=//"
+}
+
+SUPABASE_URL="$(get_val NEXT_PUBLIC_SUPABASE_URL)"
+SUPABASE_ANON="$(get_val NEXT_PUBLIC_SUPABASE_ANON_KEY)"
+SUPABASE_SERVICE="$(get_val SUPABASE_SERVICE_ROLE_KEY)"
+FAL="$(get_val FAL_KEY)"
+ANTHROPIC="$(get_val ANTHROPIC_API_KEY)"
+CAMB="$(get_val CAMB_API_KEY)"
+BLOB="$(get_val BLOB_READ_WRITE_TOKEN)"
+QPAY_USER="$(get_val QPAY_USERNAME)"
+QPAY_PASS="$(get_val QPAY_PASSWORD)"
+QPAY_CODE="$(get_val QPAY_INVOICE_CODE)"
+APP_URL="https://$(printenv REPLIT_DEV_DOMAIN)"
+
+# Write .env.local for Next.js server components
+cat > .env.local << ENVEOF
+NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
+NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON}
+SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE}
+FAL_KEY=${FAL}
+ANTHROPIC_API_KEY=${ANTHROPIC}
+CAMB_API_KEY=${CAMB}
+BLOB_READ_WRITE_TOKEN=${BLOB}
+QPAY_USERNAME=${QPAY_USER}
+QPAY_PASSWORD=${QPAY_PASS}
+QPAY_INVOICE_CODE=${QPAY_CODE}
+NEXT_PUBLIC_APP_URL=${APP_URL}
+ENVEOF
+
+# Also export so next.config.mjs and middleware can see them in process.env
+export NEXT_PUBLIC_SUPABASE_URL="${SUPABASE_URL}"
+export NEXT_PUBLIC_SUPABASE_ANON_KEY="${SUPABASE_ANON}"
+export SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE}"
+export FAL_KEY="${FAL}"
+export ANTHROPIC_API_KEY="${ANTHROPIC}"
+export CAMB_API_KEY="${CAMB}"
+export BLOB_READ_WRITE_TOKEN="${BLOB}"
+export QPAY_USERNAME="${QPAY_USER}"
+export QPAY_PASSWORD="${QPAY_PASS}"
+export QPAY_INVOICE_CODE="${QPAY_CODE}"
+export NEXT_PUBLIC_APP_URL="${APP_URL}"
+
+exec pnpm next dev -p ${PORT:-3000} -H 0.0.0.0

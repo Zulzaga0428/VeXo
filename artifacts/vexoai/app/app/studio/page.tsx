@@ -103,6 +103,9 @@ export default function StudioPage() {
   // narration so the voice and lips match (avoids the "wrong voice / broken mouth"
   // look). Falls back to a plain audio merge for faceless / product shots.
   const [lipSync, setLipSync] = useState(true)
+  // "natural" = LatentSync (diffusion, no seam, best for close-up faces)
+  // "pro"     = Sync Labs lipsync-2-pro (fast, good for wide shots)
+  const [lipsyncEngine, setLipsyncEngine] = useState<"natural" | "pro">("natural")
 
   // Voice selection drives the language: a Mongolian voice → Mongolian video,
   // a Global language → that language. UI text follows mn/en only.
@@ -378,7 +381,7 @@ export default function StudioPage() {
                       const lsRes = await fetch("/api/lipsync", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl }),
+                        body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl, engine: lipsyncEngine }),
                       })
                       const lsData = await lsRes.json()
                       if (lsRes.ok && lsData.videoUrl) {
@@ -1245,6 +1248,23 @@ export default function StudioPage() {
                       <span className="text-[10px] font-medium text-accent">+{LIPSYNC_COST}</span>
                     )}
                   </button>
+                  {/* Engine quality toggle — only visible when lip-sync is on */}
+                  {lipSync && (
+                    <button
+                      type="button"
+                      onClick={() => setLipsyncEngine((e) => e === "natural" ? "pro" : "natural")}
+                      title={t(
+                        lipsyncEngine === "natural" ? "Байгалийн (LatentSync) — уруул жигд, нүүрний залгаасгүй" : "Хурдан (Sync Labs) — өргөн тал, хурдан",
+                        lipsyncEngine === "natural" ? "Natural (LatentSync) — seamless, organic lips" : "Fast (Sync Labs) — wide shots, faster",
+                      )}
+                      className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-background/60 px-2 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    >
+                      {lipsyncEngine === "natural" ? "🌿" : "⚡"}
+                      <span className="whitespace-nowrap">
+                        {lipsyncEngine === "natural" ? t("Байгалийн", "Natural") : t("Хурдан", "Fast")}
+                      </span>
+                    </button>
+                  )}
                 </div>
                 <button
                   type="button"

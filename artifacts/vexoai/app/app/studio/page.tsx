@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
-import { ChevronDown, ChevronRight, Menu, Plus, ArrowUp, Film, Loader2, Play, AlertCircle, ImageIcon, Upload, X, Mic, Check } from "lucide-react"
+import { ChevronDown, ChevronRight, Menu, Plus, ArrowUp, Film, Loader2, Play, AlertCircle, ImageIcon, Upload, X, Mic, Check, SlidersHorizontal } from "lucide-react"
 import { VoicePicker, type VoiceSelection } from "@/components/studio-voice-picker"
 
 type SceneStatus = "idle" | "planning" | "queued" | "processing" | "voicing" | "done" | "failed"
@@ -95,7 +95,7 @@ export default function StudioPage() {
   const [navOpen, setNavOpen] = useState(false)
   const [prompt, setPrompt] = useState("")
   const [sceneCount, setSceneCount] = useState(1)
-  const SCENE_OPTIONS = [1, 2, 3, 5]
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [ratio, setRatio] = useState<"16:9" | "9:16">("16:9")
   const [videoModel, setVideoModel] = useState<VideoModelId>("standard")
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -1093,9 +1093,129 @@ export default function StudioPage() {
             )}
           </div>
 
-          {/* Prompt input */}
-          <div className="border-t border-border p-3">
-            <div className="rounded-2xl border border-border bg-card/60 p-2 transition-colors focus-within:border-accent/60">
+          {/* Prompt input — clean studio style */}
+          <div className="border-t border-border bg-background/20 p-3 space-y-2">
+            {/* Collapsible settings panel */}
+            {settingsOpen && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/60 bg-card/40 px-3 py-2.5">
+                {/* Aspect ratio */}
+                <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background/60 p-0.5">
+                  {(["16:9", "9:16"] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRatio(r)}
+                      aria-pressed={ratio === r}
+                      className={`flex h-6 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors ${
+                        ratio === r
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                {/* Video model selector */}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setModelMenuOpen((v) => !v)}
+                    className="flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary"
+                  >
+                    <Film className="h-3.5 w-3.5 shrink-0 text-accent" />
+                    <span className="whitespace-nowrap">{VIDEO_MODELS.find((m) => m.id === videoModel)?.name}</span>
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      {VIDEO_MODELS.find((m) => m.id === videoModel)?.credits} cr
+                    </span>
+                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </button>
+                  {modelMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setModelMenuOpen(false)} />
+                      <div className="absolute bottom-full left-0 z-40 mb-1.5 max-w-[calc(100vw-3rem)] w-52 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+                        {VIDEO_MODELS.map((m) => {
+                          const selected = m.id === videoModel
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                setVideoModel(m.id)
+                                setModelMenuOpen(false)
+                              }}
+                              className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-secondary ${
+                                selected ? "bg-accent/10" : ""
+                              }`}
+                            >
+                              <Film className={`mt-0.5 h-4 w-4 shrink-0 ${selected ? "text-accent" : "text-muted-foreground"}`} />
+                              <span className="flex min-w-0 flex-1 flex-col">
+                                <span className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-xs font-semibold">{m.name}</span>
+                                  <span className="shrink-0 text-[10px] font-medium text-accent">{m.credits} cr</span>
+                                </span>
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {m.engine} · {m.maxDuration}{t("с", "s")}
+                                </span>
+                                <span className="truncate text-[10px] text-muted-foreground">{t(m.descMn, m.descEn)}</span>
+                              </span>
+                              {selected && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Lip-sync toggle */}
+                <button
+                  type="button"
+                  onClick={() => setLipSync((v) => !v)}
+                  aria-pressed={lipSync}
+                  className={`flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                    lipSync
+                      ? "border-accent bg-accent/15 text-accent"
+                      : "border-border bg-background/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  }`}
+                >
+                  <Mic className="h-3.5 w-3.5 shrink-0" />
+                  {t("Уруул синк", "Lip sync")}
+                  {lipSync && <span className="text-[10px] font-medium">+{LIPSYNC_COST}</span>}
+                </button>
+                {lipSync && (
+                  <button
+                    type="button"
+                    onClick={() => setLipsyncEngine((e) => e === "natural" ? "pro" : "natural")}
+                    className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-background/60 px-2.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                  >
+                    {lipsyncEngine === "natural" ? "🌿" : "⚡"}
+                    <span className="whitespace-nowrap">
+                      {lipsyncEngine === "natural" ? t("Байгалийн", "Natural") : t("Хурдан", "Fast")}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Main input card */}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card/60 transition-colors focus-within:border-accent/60">
+              <input
+                ref={chatImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    const target = scenes.findIndex((s) => !s.posterUrl && !s.sourceImageUrl)
+                    const idx = target >= 0 ? target : activeScene
+                    setActiveScene(idx)
+                    setMobileView("result")
+                    uploadSceneImage(idx, file)
+                  }
+                  e.target.value = ""
+                }}
+              />
               <textarea
                 ref={promptRef}
                 value={prompt}
@@ -1106,171 +1226,39 @@ export default function StudioPage() {
                     handleSubmit()
                   }
                 }}
-                rows={1}
-                placeholder={t("Видео, аватар, контент — хамтдаа бүтээцгээе...", "Video, avatar, content — let's create together...")}
-                className="block max-h-[200px] w-full resize-none overflow-y-auto bg-transparent px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                rows={3}
+                placeholder={t("Санаагаа бичнэ үү...", "Describe your idea...")}
+                className="block max-h-[200px] w-full resize-none bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
               />
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 px-1 pt-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-1">
-                  {/* Image upload. The picked image does NOT go into the chat —
-                      it lands directly in the next empty scene thumbnail in the
-                      result area, then we switch to the result view so the user
-                      sees where it went. */}
-                  <input
-                    ref={chatImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        // First scene without an image, else the active scene.
-                        const target = scenes.findIndex((s) => !s.posterUrl && !s.sourceImageUrl)
-                        const idx = target >= 0 ? target : activeScene
-                        setActiveScene(idx)
-                        setMobileView("result")
-                        uploadSceneImage(idx, file)
-                      }
-                      e.target.value = ""
-                    }}
-                  />
+              <div className="flex items-center justify-between border-t border-border/40 px-3 py-2">
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => chatImageInputRef.current?.click()}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                     aria-label={t("Зураг оруулах", "Add image")}
-                    title={t("Зураг оруулах (хэсэгт нэмэгдэнэ)", "Add image (goes to a scene)")}
+                    title={t("Зураг оруулах", "Add image")}
                   >
-                    <Plus className="h-4 w-4" />
+                    <ImageIcon className="h-4 w-4" />
                   </button>
-                  {/* Scene count selector */}
-                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-background/60 p-0.5">
-                    {SCENE_OPTIONS.map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setSceneCount(n)}
-                        aria-pressed={sceneCount === n}
-                        className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold transition-colors ${
-                          sceneCount === n
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Aspect ratio selector */}
-                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-background/60 p-0.5">
-                    {(["16:9", "9:16"] as const).map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setRatio(r)}
-                        aria-pressed={ratio === r}
-                        className={`flex h-6 items-center justify-center rounded-md px-1.5 text-xs font-semibold transition-colors ${
-                          ratio === r
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Video model selector (dropdown) */}
-                  <div className="relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setModelMenuOpen((v) => !v)}
-                      className="flex h-7 items-center gap-1 rounded-lg border border-border bg-background/60 px-2 text-xs font-semibold text-foreground transition-colors hover:bg-secondary"
-                    >
-                      <Film className="h-3.5 w-3.5 shrink-0 text-accent" />
-                      <span className="whitespace-nowrap">{VIDEO_MODELS.find((m) => m.id === videoModel)?.name}</span>
-                      <span className="text-[10px] font-medium text-muted-foreground">
-                        {VIDEO_MODELS.find((m) => m.id === videoModel)?.credits} cr
-                      </span>
-                      <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    </button>
-                    {modelMenuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-30" onClick={() => setModelMenuOpen(false)} />
-                        <div className="absolute bottom-full left-0 z-40 mb-1.5 max-w-[calc(100vw-3rem)] w-52 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
-                          {VIDEO_MODELS.map((m) => {
-                            const selected = m.id === videoModel
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setVideoModel(m.id)
-                                  setModelMenuOpen(false)
-                                }}
-                                className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-secondary ${
-                                  selected ? "bg-accent/10" : ""
-                                }`}
-                              >
-                                <Film className={`mt-0.5 h-4 w-4 shrink-0 ${selected ? "text-accent" : "text-muted-foreground"}`} />
-                                <span className="flex min-w-0 flex-1 flex-col">
-                                  <span className="flex items-center justify-between gap-2">
-                                    <span className="truncate text-xs font-semibold">{m.name}</span>
-                                    <span className="shrink-0 text-[10px] font-medium text-accent">{m.credits} cr</span>
-                                  </span>
-                                  <span className="truncate text-[11px] text-muted-foreground">
-                                    {m.engine} · {m.maxDuration}{t("с", "s")}
-                                  </span>
-                                  <span className="truncate text-[10px] text-muted-foreground">{t(m.descMn, m.descEn)}</span>
-                                </span>
-                                {selected && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {/* Lip-sync toggle — matches the speaker's mouth to the voiceover */}
                   <button
                     type="button"
-                    onClick={() => setLipSync((v) => !v)}
-                    aria-pressed={lipSync}
-                    title={t("Уруул синк", "Lip-sync")}
-                    className={`flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs font-semibold transition-colors ${
-                      lipSync
-                        ? "border-accent bg-accent/15 text-accent"
-                        : "border-border bg-background/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    onClick={() => setSettingsOpen((v) => !v)}
+                    className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors ${
+                      settingsOpen
+                        ? "bg-accent/10 text-accent"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                     }`}
                   >
-                    <Mic className="h-3.5 w-3.5 shrink-0" />
-                    <span className="whitespace-nowrap">{t("Уруул", "Lip")}</span>
-                    {lipSync && (
-                      <span className="text-[10px] font-medium text-accent">+{LIPSYNC_COST}</span>
-                    )}
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    {t("Тохиргоо", "Settings")}
                   </button>
-                  {/* Engine quality toggle — only visible when lip-sync is on */}
-                  {lipSync && (
-                    <button
-                      type="button"
-                      onClick={() => setLipsyncEngine((e) => e === "natural" ? "pro" : "natural")}
-                      title={t(
-                        lipsyncEngine === "natural" ? "Байгалийн (LatentSync) — уруул жигд, нүүрний залгаасгүй" : "Хурдан (Sync Labs) — өргөн тал, хурдан",
-                        lipsyncEngine === "natural" ? "Natural (LatentSync) — seamless, organic lips" : "Fast (Sync Labs) — wide shots, faster",
-                      )}
-                      className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-background/60 px-2 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                    >
-                      {lipsyncEngine === "natural" ? "🌿" : "⚡"}
-                      <span className="whitespace-nowrap">
-                        {lipsyncEngine === "natural" ? t("Байгалийн", "Natural") : t("Хурдан", "Fast")}
-                      </span>
-                    </button>
-                  )}
                 </div>
                 <button
                   type="button"
                   onClick={handleSubmit}
                   disabled={!prompt.trim() || busy}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-40"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-40"
                   aria-label={t("Илгээх", "Submit")}
                 >
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
@@ -1298,12 +1286,14 @@ export default function StudioPage() {
                   {t("Чат", "Chat")}
                 </button>
                 <h2 className="text-sm font-semibold text-muted-foreground">
-                  {hasScenes ? t("Үр дүн", "Result") : t("Үр дүн энд гарна", "Your result appears here")}
+                  {hasScenes ? t("Үр дүн", "Result") : t("Studio", "Studio")}
                 </h2>
               </div>
-              <span className="rounded-full border border-border bg-card/60 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                {sceneCount} {t("хэсэг", "scenes")} · {ratio}
-              </span>
+              {hasScenes && (
+                <span className="rounded-full border border-border/50 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground/70">
+                  {scenes.length} {t("хэсэг", "scenes")} · {ratio}
+                </span>
+              )}
             </div>
 
             {/* Main video frame */}

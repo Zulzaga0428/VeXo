@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server"
 import { createClient as createAdminClient } from "@supabase/supabase-js"
 
 // Free starter credits every new user receives on first sign-up.
-// 2 standard videos (10 credits each) so they can try the product immediately.
 const STARTER_CREDITS = 20
 
 export async function POST() {
@@ -17,19 +16,33 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Check if profile already exists
-    const { data: existing } = await supabase
+    const admin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+
+    // Check if profile already exists (may have been auto-created by a DB trigger)
+    const { data: existing } = await admin
       .from("profiles")
       .select("id, credits")
       .eq("id", user.id)
       .single()
 
     if (existing) {
-      // Already set up — return current state (idempotent)
+      // Profile exists but credits are below starter amount — top up.
+      // This handles the case where a Supabase trigger creates the row with
+      // a lower default (e.g. 0 or 7) before our init-profile call arrives.
+      if ((existing.credits ?? 0) < STARTER_CREDITS) {
+        await admin
+          .from("profiles")
+          .update({ credits: STARTER_CREDITS })
+          .eq("id", user.id)
+        return NextResponse.json({ topped_up: true, credits: STARTER_CREDITS })
+      }
       return NextResponse.json({ alreadyExists: true, credits: existing.credits })
     }
 
-    // Build a unique username from email or user id
+    // Profile doesn't exist yet — create it fresh with starter credits.
     const emailBase = user.email?.split("@")[0] ?? ""
     const safeBase = emailBase.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 16)
     const suffix = user.id.replace(/-/g, "").slice(0, 6)
@@ -41,12 +54,6 @@ export async function POST() {
       emailBase ||
       "VexoAI User"
 
-    // Use service role to bypass RLS for profile creation
-    const admin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
     const { error } = await admin.from("profiles").insert({
       id: user.id,
       username,
@@ -56,7 +63,6 @@ export async function POST() {
     })
 
     if (error) {
-      // Username collision — retry with longer suffix
       if (error.code === "23505") {
         const longerSuffix = user.id.replace(/-/g, "").slice(0, 12)
         const username2 = `user_${longerSuffix}`
@@ -67,9 +73,7 @@ export async function POST() {
           credits: STARTER_CREDITS,
           plan: "free",
         })
-        if (err2) {
-          return NextResponse.json({ error: err2.message }, { status: 500 })
-        }
+        if (err2) return NextResponse.json({ error: err2.message }, { status: 500 })
         return NextResponse.json({ created: true, credits: STARTER_CREDITS, username: username2 })
       }
       return NextResponse.json({ error: error.message }, { status: 500 })

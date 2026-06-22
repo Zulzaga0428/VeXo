@@ -1462,84 +1462,105 @@ export default function StudioPage() {
               </div>
             )}
 
-            {/* Numbered scene thumbnails below */}
-            <div className="mt-3 flex flex-wrap justify-center gap-2.5">
-              {(hasScenes ? scenes : Array.from({ length: sceneCount }).map(() => null)).map(
-                (s, i) => {
-                  const isActive = i === activeScene
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          // Allow selecting/editing even before a prompt is sent.
-                          if (i === activeScene) openImageEditor(i)
-                          else setActiveScene(i)
-                        }}
-                        className={`group relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-card/30 transition-all ${
-                          isActive ? "border-accent ring-2 ring-accent/40" : "border-dashed border-border"
-                        } ${ratio === "16:9" ? "h-16 w-28" : "h-28 w-16"}`}
-                      >
-                        <span className="absolute left-1.5 top-1.5 z-10 text-xs font-bold text-foreground/90 drop-shadow">
-                          {i + 1}
-                        </span>
-                        {s && (
-                          <span className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-                            <ImageIcon className="h-3 w-3" />
-                          </span>
-                        )}
-                        {s?.videoUrl ? (
-                          <>
-                            <video src={s.videoUrl} muted playsInline className="h-full w-full object-cover" />
-                            <Play className="absolute h-4 w-4 fill-foreground text-foreground" />
-                          </>
-                        ) : s?.posterUrl ? (
-                          <>
-                            <img
-                              src={s.posterUrl || "/placeholder.svg"}
-                              alt={`Scene ${i + 1}`}
-                              className="h-full w-full object-cover"
-                            />
-                            {s.status !== "idle" && s.status !== "done" && (
-                              <span className="absolute inset-0 flex items-center justify-center bg-background/45">
-                                <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                              </span>
-                            )}
-                          </>
-                        ) : s && s.status !== "idle" && s.status !== "done" ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        ) : (
-                          // Empty slot — show a clear "add image" affordance so
-                          // users know the thumbnail is tappable to upload.
-                          <span className="flex flex-col items-center gap-0.5 text-muted-foreground/50 transition-colors group-hover:text-accent">
-                            <Plus className="h-4 w-4" />
-                            <span className="text-[9px] font-medium leading-none">
-                              {t("Зураг", "Image")}
-                            </span>
-                          </span>
-                        )}
-                      </button>
-                      <span
-                        className={`text-xs font-medium transition-colors ${
-                          isActive ? "text-foreground" : "text-muted-foreground/70"
-                        }`}
-                      >
-                        {t("Хэсэг", "Scene")} {i + 1}
-                      </span>
-                    </div>
-                  )
-                },
-              )}
-            </div>
+            {/* Scene strip — HeyGen style horizontal scroll */}
+            <div className="mt-4 overflow-x-auto pb-1">
+              <div className="flex gap-3" style={{ minWidth: "max-content" }}>
+                {(hasScenes ? scenes : Array.from({ length: sceneCount }).map(() => null)).map(
+                  (s, i) => {
+                    const isActive = i === activeScene
+                    const isDone = s?.status === "done"
+                    const isFailed = s?.status === "failed"
+                    const isProcessing = s && s.status !== "idle" && s.status !== "done" && s.status !== "failed"
+                    const thumbW = ratio === "16:9" ? 144 : 90
+                    const thumbH = ratio === "16:9" ? 82 : 144
 
-            {editingScene === null && (
-              <p className="mt-2 text-center text-xs text-muted-foreground/70">
-                {t(
-                  "Хэсэг дээр дарж сонгоод, дахин дарвал зураг оруулна",
-                  "Tap a scene to select, tap again to upload an image",
+                    return (
+                      <div key={i} className="flex shrink-0 flex-col gap-1.5" style={{ width: thumbW }}>
+                        {/* Thumbnail button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (i === activeScene) openImageEditor(i)
+                            else setActiveScene(i)
+                          }}
+                          style={{ height: thumbH }}
+                          className={`group relative flex w-full items-center justify-center overflow-hidden rounded-xl border-2 bg-card/30 transition-all ${
+                            isActive
+                              ? "border-accent shadow-[0_0_12px_rgba(0,200,100,0.15)]"
+                              : "border-border/40 hover:border-border"
+                          }`}
+                        >
+                          {/* Scene number pill — top left */}
+                          <span className="absolute left-1.5 top-1.5 z-10 flex h-5 min-w-[20px] items-center justify-center rounded-md bg-black/60 px-1.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                            {i + 1}
+                          </span>
+
+                          {/* Status badge — top right */}
+                          {isDone && (
+                            <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-accent shadow">
+                              <Check className="h-3 w-3 text-accent-foreground" />
+                            </span>
+                          )}
+                          {isFailed && (
+                            <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive shadow">
+                              <AlertCircle className="h-3 w-3 text-white" />
+                            </span>
+                          )}
+                          {isProcessing && !s?.posterUrl && (
+                            <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-background/70 backdrop-blur-sm">
+                              <Loader2 className="h-3 w-3 animate-spin text-accent" />
+                            </span>
+                          )}
+
+                          {/* Media content */}
+                          {s?.videoUrl ? (
+                            <>
+                              <video src={s.videoUrl} muted playsInline className="h-full w-full object-cover" />
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+                                <Play className="h-5 w-5 fill-white text-white drop-shadow-lg" />
+                              </span>
+                            </>
+                          ) : s?.posterUrl ? (
+                            <>
+                              <img src={s.posterUrl} alt={`Scene ${i + 1}`} className="h-full w-full object-cover" />
+                              {isProcessing && (
+                                <span className="absolute inset-0 flex items-center justify-center bg-background/40 backdrop-blur-[1px]">
+                                  <Loader2 className="h-5 w-5 animate-spin text-accent" />
+                                </span>
+                              )}
+                            </>
+                          ) : isProcessing ? (
+                            <Loader2 className="h-5 w-5 animate-spin text-accent" />
+                          ) : (
+                            <span className="flex flex-col items-center gap-1 text-muted-foreground/30 transition-colors group-hover:text-accent/60">
+                              <Plus className="h-5 w-5" />
+                              <span className="text-[9px] font-medium">{t("Зураг", "Img")}</span>
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Scene info below thumbnail */}
+                        <div className="px-0.5">
+                          {s?.summary ? (
+                            <p
+                              className={`line-clamp-2 text-[10px] leading-tight transition-colors ${
+                                isActive ? "text-foreground" : "text-muted-foreground/60"
+                              }`}
+                            >
+                              {s.summary}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] leading-tight text-muted-foreground/30">
+                              {t("Хэсэг", "Scene")} {i + 1}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  },
                 )}
-              </p>
-            )}
+              </div>
+            </div>
 
             {/* Voice picker (Gemini) — Mongolian + Global languages, with preview */}
             <div className="mt-5 flex justify-center">

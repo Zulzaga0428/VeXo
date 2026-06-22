@@ -10,6 +10,13 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      // Initialize profile with free starter credits for new OAuth users.
+      // Fire-and-forget — never block the redirect on this.
+      try {
+        await fetch(`${origin}/api/auth/init-profile`, { method: 'POST' })
+      } catch {
+        // Non-fatal — user can still log in
+      }
       return NextResponse.redirect(`${origin}${next}`)
     }
   }

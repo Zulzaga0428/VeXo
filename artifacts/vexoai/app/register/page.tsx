@@ -50,6 +50,9 @@ export default function RegisterPage() {
       return
     }
 
+    // Create profile with 20 free starter credits (fire-and-forget, non-blocking)
+    fetch("/api/auth/init-profile", { method: "POST" }).catch(() => null)
+
     // Email confirmation off — user is already logged in, go straight to app
     router.push("/app/studio")
     router.refresh()

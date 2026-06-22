@@ -1,5 +1,5 @@
-import { put } from "@vercel/blob"
 import { createClient } from "@/lib/supabase/server"
+import { uploadFile } from "@/lib/storage"
 import { NextResponse } from "next/server"
 
 export const runtime = "nodejs"
@@ -27,10 +27,10 @@ export async function POST(req: Request) {
 
   const ext = file.name.split(".").pop() || "jpg"
   const path = `profiles/${user.id}/${kind}-${Date.now()}.${ext}`
-  const blob = await put(path, file, { access: "public", addRandomSuffix: false })
+  const url = await uploadFile(path, file, file.type)
 
   const column = kind === "avatar" ? "avatar_url" : "banner_url"
-  await supabase.from("profiles").update({ [column]: blob.url }).eq("id", user.id)
+  await supabase.from("profiles").update({ [column]: url }).eq("id", user.id)
 
-  return NextResponse.json({ url: blob.url })
+  return NextResponse.json({ url })
 }

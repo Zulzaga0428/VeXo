@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { put } from "@vercel/blob"
 import { createClient } from "@/lib/supabase/server"
+import { uploadFile } from "@/lib/storage"
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -20,11 +20,10 @@ export async function POST(req: NextRequest) {
   const ext = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg")
   const key = `gallery/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 
-  // Private store — keep the pathname; gallery serves it via /api/gallery/media/[id]
-  const blob = await put(key, file, { access: "private", addRandomSuffix: false })
+  const url = await uploadFile(key, file, file.type)
 
   return NextResponse.json({
-    url: blob.pathname,
+    url,
     media_type: isVideo ? "video" : "image",
   })
 }

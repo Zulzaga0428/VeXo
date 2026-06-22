@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { put } from "@vercel/blob"
+import { uploadFile } from "@/lib/storage"
 
 export async function POST(req: Request) {
   const supabase = await createClient()
@@ -17,8 +17,7 @@ export async function POST(req: Request) {
   }
   if (!imageUrl) return NextResponse.json({ error: "imageUrl required" }, { status: 400 })
 
-  // FAL image URLs expire, so re-host to our (private) blob store. We store the
-  // private pathname and serve it publicly via /api/gallery/media/[id].
+  // FAL image URLs expire — re-host to Supabase Storage so they persist
   let mediaRef = imageUrl
   try {
     const r = await fetch(imageUrl)
@@ -26,13 +25,8 @@ export async function POST(req: Request) {
     const buf = await r.arrayBuffer()
     const ct = r.headers.get("content-type") || "image/png"
     const ext = ct.includes("jpeg") ? "jpg" : ct.includes("webp") ? "webp" : "png"
-    const blob = await put(`gallery/${user.id}/${Date.now()}.${ext}`, Buffer.from(buf), {
-      access: "private",
-      contentType: ct,
-      addRandomSuffix: false,
-    })
-    mediaRef = blob.pathname
-  } catch (e) {
+    mediaRef = await uploadFile(`gallery/${user.id}/${Date.now()}.${ext}`, Buffer.from(buf), ct)
+  } catch {
     return NextResponse.json({ error: "Failed to save image" }, { status: 500 })
   }
 

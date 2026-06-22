@@ -1,6 +1,6 @@
-import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { uploadFile } from "@/lib/storage"
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,11 +43,8 @@ export async function POST(request: NextRequest) {
     const videoBuffer = await videoResponse.blob()
 
     const filename = `videos/${user.id}/${Date.now()}-scene${sceneIndex}.mp4`
-    const blob = await put(filename, videoBuffer, {
-      access: "private",
-    })
+    const publicUrl = await uploadFile(filename, videoBuffer, "video/mp4")
 
-    // Save to database
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 7)
 
@@ -57,7 +54,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         prompt,
         voice: voice || "professional",
-        video_url: blob.pathname,
+        video_url: publicUrl,
         status: "completed",
         series_count: seriesCount || 1,
         scene_index: sceneIndex || 0,
@@ -70,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ video: data, pathname: blob.pathname })
+    return NextResponse.json({ video: data, pathname: publicUrl })
   } catch (error) {
     console.error("Save video error:", error)
     return NextResponse.json({ error: "Failed to save video" }, { status: 500 })

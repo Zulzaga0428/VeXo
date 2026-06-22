@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient, isAdminEmail } from "@/lib/supabase/admin"
-import { del } from "@vercel/blob"
+import { deleteFile } from "@/lib/storage"
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -44,11 +44,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   // Get the item to delete its blob
   const { data: item } = await admin.from("showcase_items").select("media_url, poster_url").eq("id", id).single()
 
-  // Try to delete blob files (ignore errors)
+  // Delete storage files (ignore errors)
   for (const url of [item?.media_url, item?.poster_url].filter(Boolean) as string[]) {
-    try {
-      if (url.includes("blob.vercel-storage.com")) await del(url)
-    } catch {}
+    await deleteFile(url)
   }
 
   const { error } = await admin.from("showcase_items").delete().eq("id", id)

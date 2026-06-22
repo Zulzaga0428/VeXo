@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { put } from "@vercel/blob"
+import { uploadFile } from "@/lib/storage"
 
 export async function POST(request: Request) {
   try {
@@ -10,12 +10,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    const blob = await put(`videos/${Date.now()}-${file.name}`, file, {
-      access: "public",
-      addRandomSuffix: true,
-    })
+    const key = `videos/${Date.now()}-${file.name.replace(/[^a-z0-9._-]/gi, "_")}`
+    const url = await uploadFile(key, file, file.type)
 
-    return NextResponse.json({ url: blob.url })
+    return NextResponse.json({ url })
   } catch (error) {
     console.error("[v0] Upload error:", error)
     return NextResponse.json(

@@ -45,12 +45,17 @@ export async function POST(request: NextRequest) {
 
     try {
       if (imageUrl) {
-        // Image-to-image with Flux Dev
+        // Image-to-image with Flux Dev.
+        // strength 0.55 (was 0.85) — lower strength preserves the original
+        // person's face and identity while still allowing outfit / background
+        // changes. At 0.85 the model almost fully regenerates the image and
+        // replaces the face with a random one.
+        const facePrefix = "Preserve the exact face, skin tone, and identity of the original person. "
         result = await fal.subscribe("fal-ai/flux/dev/image-to-image", {
           input: {
-            prompt: enhancedPrompt,
+            prompt: facePrefix + enhancedPrompt,
             image_url: imageUrl,
-            strength: 0.85,
+            strength: 0.55,
             num_images: numImages,
             num_inference_steps: 28,
             guidance_scale: 3.5,

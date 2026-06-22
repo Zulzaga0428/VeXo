@@ -48,7 +48,9 @@ export async function POST(request: NextRequest) {
           {
             id: "voice",
             type: "audio",
-            keyframes: [{ timestamp: 0, duration: 0, url: audioUrl }],
+            // 0.5s delay so the speaker's mouth has time to open before
+            // the voice starts — prevents the "audio playing before lips move" effect.
+            keyframes: [{ timestamp: 0.5, duration: 0, url: audioUrl }],
           },
         ],
       },

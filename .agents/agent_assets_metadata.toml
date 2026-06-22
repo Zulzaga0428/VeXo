@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "HUHrRbiSrteMeCoqOh8RP"
+uri = "file://VexiAI-railway-ready.tar.gz"
+type = "unspecified"
+title = "VexiAI — Railway Deploy Ready"

@@ -19,3 +19,14 @@ description: How per-scene narration timing works and where the "voice before li
 **Gotchas:**
 - Always validate the offset with `Number.isFinite` before clamping — `typeof x === "number"` is `true` for `NaN`, and a `NaN` timestamp breaks FAL compose.
 - If padding/upload fails, the code falls back to undelayed audio rather than failing the scene. Acceptable, but means the pause silently won't apply in that case.
+
+## Per-scene voice timeline (waveform + drag)
+
+The delay slider was replaced by a draggable per-scene audio timeline (waveform inside the scene's clip window). Narration is **pre-generated for preview** so the user positions a real waveform before final render.
+
+**Narration identity is a key: `voiceId|lang|text`.** Stored audio carries the key it was generated with. Reuse only when the *current* key matches the stored key.
+- **Reuse, don't re-charge:** produce reuses the previewed audio when keys match, so TTS (1 credit) is charged once whether the user previewed or not.
+- **Charge-once under races:** preview generation is deduped through an in-flight `Map<flightKey, Promise>` ref (`flightKey = index|key`). Concurrent callers (rapid clicks, or produce racing an in-progress preview) share the one promise. Produce `await`s the same ensure-narration call before reading stored audio, so it never fires a second `/api/tts`.
+- **Stale-key trap:** changing the *global* voice does not touch a scene that has no per-scene voice, so its stored `narrationKey` silently goes stale. The UI must **re-derive freshness from the current key** (not trust the stored `narrationStatus === "ready"`) or it shows the wrong waveform. Treat a stale key as not-ready → prompt a refresh.
+
+**Waveform peaks are decoded server-side** (`/api/audio-peaks`), same CORS reasoning as the padding route. Only PCM/float **WAV** (camb.ai) is decodable → `supported:true` + normalized peaks + duration; **MP3** (Gemini global voices) returns `supported:false` and the timeline shows a plain block instead of bars.

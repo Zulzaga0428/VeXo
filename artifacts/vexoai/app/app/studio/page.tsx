@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChevronDown, ChevronRight, Menu, Plus, ArrowUp, Film, Loader2, Play, AlertCircle, ImageIcon, Upload, X, Mic, Check, SlidersHorizontal } from "lucide-react"
 import { VoicePicker, type VoiceSelection } from "@/components/studio-voice-picker"
+import { AudioTimeline, type NarrationStatus } from "@/components/studio-audio-timeline"
 
 type SceneStatus = "idle" | "planning" | "queued" | "processing" | "voicing" | "done" | "failed"
 
@@ -33,11 +34,36 @@ interface StudioScene {
   // Seconds of silence before the narration starts, so the speaker's mouth has
   // time to open before talking. Defaults to 0.5s when unset.
   audioStartOffset?: number
+  // Pre-generated narration so the user can preview and position the voice on the
+  // timeline BEFORE final render. Reused at produce time so we don't re-charge
+  // TTS and so the final output matches the waveform the user positioned.
+  narrationAudioUrl?: string
+  narrationDurationSec?: number
+  narrationPeaks?: number[]
+  // false when the audio is MP3 (Gemini global voices) and can't be decoded into
+  // a waveform — the timeline then shows a plain block instead of bars.
+  narrationWaveSupported?: boolean
+  // Identity of the generated audio: voice + lang + text. If the scene's current
+  // key differs, the stored audio is stale and is regenerated.
+  narrationKey?: string
+  narrationStatus?: NarrationStatus
   error?: string
 }
 
 // Default delay (seconds) before a scene's narration begins.
 const DEFAULT_AUDIO_OFFSET = 0.5
+// Largest start delay we allow, kept in sync with the server pad/merge clamps.
+const MAX_AUDIO_OFFSET = 5
+
+// The text that gets voiced for a scene (narration, falling back to summary).
+function narrationTextFor(scene: StudioScene): string {
+  return (scene.narration || scene.summary || "").trim()
+}
+// Stable identity of a scene's narration audio. When voice/lang/text changes the
+// key changes, marking any stored audio stale.
+function narrationKeyFor(text: string, voiceId: string, lang: string): string {
+  return `${voiceId}|${lang}|${text}`
+}
 
 interface ChatMessage {
   role: "user" | "agent"
@@ -188,6 +214,10 @@ export default function StudioPage() {
       return next
     })
   }
+  // Dedupes narration generation per scene+key so a preview that's mid-flight
+  // (rapid clicks, or final produce racing an in-progress preview) never charges
+  // TTS more than once — concurrent callers share the same promise.
+  const narrationInFlightRef = useRef<Map<string, Promise<void>>>(new Map())
 
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
 
@@ -246,8 +276,8 @@ export default function StudioPage() {
     setEditingScene(index)
   }
 
-  // Set a per-scene voice (seeds placeholder scenes if none exist yet).
-  const setSceneVoice = (index: number, voice: VoiceSelection) => {
+  // Patch one scene, seeding placeholder scenes if none exist yet.
+  const patchScene = (index: number, patch: Partial<StudioScene>) => {
     setScenesSafe((prev) => {
       const u =
         prev.length > 0
@@ -261,31 +291,109 @@ export default function StudioPage() {
                 progress: 0,
               }),
             )
-      u[index] = { ...(u[index] || { summary: "", narration: "", status: "idle", progress: 0 }), voice }
+      u[index] = { ...(u[index] || { summary: "", narration: "", status: "idle", progress: 0 }), ...patch }
       return u
     })
   }
 
-  const setSceneOffset = (index: number, audioStartOffset: number) => {
-    setScenesSafe((prev) => {
-      const u =
-        prev.length > 0
-          ? [...prev]
-          : Array.from(
-              { length: sceneCount },
-              (): StudioScene => ({
-                summary: "",
-                narration: "",
-                status: "idle" as SceneStatus,
-                progress: 0,
-              }),
-            )
-      u[index] = {
-        ...(u[index] || { summary: "", narration: "", status: "idle", progress: 0 }),
-        audioStartOffset,
-      }
-      return u
+  // Resolve the voice that will actually be used for a scene: per-scene override,
+  // else the global selection; swap in the resolved camb default if neither is a
+  // usable camb voice. Shared by preview + produce so their narration keys match.
+  const resolveSceneVoice = (scene: StudioScene): VoiceSelection => {
+    let sceneVoice = scene.voice ?? voiceSel
+    if (!sceneVoice.voiceId.startsWith("camb:") && defaultCambVoiceRef.current) {
+      sceneVoice = defaultCambVoiceRef.current
+    }
+    return sceneVoice
+  }
+
+  // Set a per-scene voice. Changing the voice invalidates any pre-generated
+  // narration (different voice => different audio) so the waveform regenerates.
+  const setSceneVoice = (index: number, voice: VoiceSelection) => {
+    patchScene(index, {
+      voice,
+      narrationAudioUrl: undefined,
+      narrationDurationSec: undefined,
+      narrationPeaks: undefined,
+      narrationWaveSupported: undefined,
+      narrationKey: undefined,
+      narrationStatus: "idle",
     })
+  }
+
+  const setSceneOffset = (index: number, audioStartOffset: number) => {
+    patchScene(index, { audioStartOffset })
+  }
+
+  // Generate (or reuse) a scene's narration audio + waveform so the user can
+  // preview and position the voice before final render. Charges TTS once; reuses
+  // existing audio when the voice/lang/text key is unchanged.
+  const ensureSceneNarration = (index: number): Promise<void> => {
+    const scene = scenesRef.current[index]
+    if (!scene) return Promise.resolve()
+    const text = narrationTextFor(scene)
+    if (!text) return Promise.resolve()
+    const voice = resolveSceneVoice(scene)
+    const key = narrationKeyFor(text, voice.voiceId, voice.lang)
+    if (scene.narrationAudioUrl && scene.narrationKey === key && scene.narrationStatus === "ready") {
+      return Promise.resolve() // already current
+    }
+    // Share a single in-flight request for this scene+key so rapid clicks (and a
+    // produce run racing the preview) never fire /api/tts twice.
+    const flightKey = `${index}|${key}`
+    const existing = narrationInFlightRef.current.get(flightKey)
+    if (existing) return existing
+
+    const run = (async () => {
+      patchScene(index, { narrationStatus: "generating" })
+      try {
+        const ttsRes = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, voice: voice.voiceId, language: voice.lang }),
+        })
+        const ttsData = await ttsRes.json()
+        if (!ttsRes.ok || !ttsData.audioUrl) {
+          patchScene(index, { narrationStatus: "failed" })
+          return
+        }
+        const audioUrl: string = ttsData.audioUrl
+        let peaks: number[] | undefined
+        let duration: number | undefined =
+          typeof ttsData.duration === "number" ? ttsData.duration : undefined
+        let supported = false
+        // Decode the waveform server-side (avoids browser CORS on camb/FAL audio).
+        try {
+          const pkRes = await fetch("/api/audio-peaks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioUrl }),
+          })
+          const pkData = await pkRes.json()
+          if (pkRes.ok && pkData.supported) {
+            peaks = Array.isArray(pkData.peaks) ? pkData.peaks : undefined
+            if (typeof pkData.duration === "number") duration = pkData.duration
+            supported = true
+          }
+        } catch {
+          // peaks failed — keep the audio, the timeline shows a plain block
+        }
+        patchScene(index, {
+          narrationAudioUrl: audioUrl,
+          narrationDurationSec: duration,
+          narrationPeaks: peaks,
+          narrationWaveSupported: supported,
+          narrationKey: key,
+          narrationStatus: "ready",
+        })
+      } catch {
+        patchScene(index, { narrationStatus: "failed" })
+      }
+    })().finally(() => {
+      narrationInFlightRef.current.delete(flightKey)
+    })
+    narrationInFlightRef.current.set(flightKey, run)
+    return run
   }
 
   // Generate one scene end to end: video -> poll -> tts -> merge -> save.
@@ -377,32 +485,40 @@ export default function StudioPage() {
                 return u
               })
 
-              // Add narration: tts → merge → save.
+              // Add narration: tts → merge → save. Reuse the voice the user
+              // already previewed/positioned on the timeline so we don't pay for
+              // TTS twice and the final cut matches the waveform they saw.
               try {
-                // Per-scene voice wins; fall back to the global selection.
-                // Respect whatever voice the user actually picked. Only swap in
-                // the resolved default if the current selection isn't a usable
-                // camb voice at all (e.g. a stale Gemini fallback id).
-                let sceneVoice = scene.voice ?? voiceSel
-                const isCambVoice = sceneVoice.voiceId.startsWith("camb:")
-                if (!isCambVoice && defaultCambVoiceRef.current) {
-                  sceneVoice = defaultCambVoiceRef.current
+                const sceneVoice = resolveSceneVoice(scene)
+                const text = narrationTextFor(scene)
+                const key = narrationKeyFor(text, sceneVoice.voiceId, sceneVoice.lang)
+                // Generate narration once: this awaits (and shares) any preview the
+                // user already kicked off on the timeline, so TTS is charged a
+                // single time even when produce races an in-progress preview.
+                if (text) await ensureSceneNarration(index)
+                const fresh = scenesRef.current[index] ?? scene
+                let audioUrl: string | undefined
+                if (fresh.narrationAudioUrl && fresh.narrationKey === key) {
+                  audioUrl = fresh.narrationAudioUrl // pre-generated on the timeline
+                } else if (text) {
+                  // Fallback only if ensureSceneNarration couldn't produce audio
+                  // (e.g. it failed); single retry, no concurrent duplicate.
+                  const ttsRes = await fetch("/api/tts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      text,
+                      voice: sceneVoice.voiceId,
+                      language: sceneVoice.lang,
+                    }),
+                  })
+                  const ttsData = await ttsRes.json()
+                  if (ttsRes.ok && ttsData.audioUrl) audioUrl = ttsData.audioUrl
                 }
-                const ttsRes = await fetch("/api/tts", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    text: scene.narration || scene.summary,
-                    voice: sceneVoice.voiceId,
-                    language: sceneVoice.lang,
-                  }),
-                })
-                const ttsData = await ttsRes.json()
                 let finalVideo = rawVideo
-                if (ttsData.audioUrl) {
-                  // How long the speaker stays silent before talking (clamped to
-                  // the slider's 0–3s range).
-                  const offset = Math.min(3, Math.max(0, scene.audioStartOffset ?? DEFAULT_AUDIO_OFFSET))
+                if (audioUrl) {
+                  // How long the speaker stays silent before talking.
+                  const offset = Math.min(MAX_AUDIO_OFFSET, Math.max(0, scene.audioStartOffset ?? DEFAULT_AUDIO_OFFSET))
                   let synced = false
                   // When lip-sync is on, drive the speaker's mouth from the
                   // narration. Falls back to a plain audio merge if it fails
@@ -413,13 +529,13 @@ export default function StudioPage() {
                     // much silence to the narration before syncing. Padding runs
                     // server-side (no browser CORS limits) and falls back to the
                     // original audio if it can't pad.
-                    let lipAudio = ttsData.audioUrl
+                    let lipAudio = audioUrl
                     if (offset > 0) {
                       try {
                         const padRes = await fetch("/api/pad-audio", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ audioUrl: ttsData.audioUrl, seconds: offset }),
+                          body: JSON.stringify({ audioUrl, seconds: offset }),
                         })
                         const padData = await padRes.json()
                         if (padRes.ok && padData.url) lipAudio = padData.url
@@ -446,7 +562,7 @@ export default function StudioPage() {
                     const mRes = await fetch("/api/merge-audio", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl, audioStartOffset: offset }),
+                      body: JSON.stringify({ videoUrl: rawVideo, audioUrl, audioStartOffset: offset }),
                     })
                     const mData = await mRes.json()
                     if (mRes.ok && mData.videoUrl) finalVideo = mData.videoUrl
@@ -989,6 +1105,20 @@ export default function StudioPage() {
   const current = scenes[activeScene]
   // Scene currently open in the editor panel (may be a not-yet-created slot).
   const currentEdit = editingScene !== null ? scenes[editingScene] : undefined
+  // Is the stored narration still valid for the scene's CURRENT voice/text? When
+  // the global voice changes, a scene without a per-scene voice keeps its old
+  // audio + key — that stored waveform is now stale, so the timeline must treat
+  // it as not-ready (prompt a refresh) instead of showing the wrong waveform.
+  const currentEditNarrationFresh =
+    !!currentEdit &&
+    currentEdit.narrationStatus === "ready" &&
+    !!currentEdit.narrationAudioUrl &&
+    currentEdit.narrationKey ===
+      narrationKeyFor(
+        narrationTextFor(currentEdit),
+        resolveSceneVoice(currentEdit).voiceId,
+        resolveSceneVoice(currentEdit).lang,
+      )
 
   const statusLabel = (s: SceneStatus) =>
     ({
@@ -1509,40 +1639,30 @@ export default function StudioPage() {
                     </div>
                   </div>
 
-                  {/* Audio start delay — how long the speaker stays silent before talking */}
-                  <div className="mt-3 rounded-xl border border-border bg-background/50 p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                        <Mic className="h-3.5 w-3.5" />
-                        {t("Хоолой эхлэх хугацаа", "Voice start delay")}
-                      </span>
-                      <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
-                        {(currentEdit?.audioStartOffset ?? DEFAULT_AUDIO_OFFSET).toFixed(1)}
-                        {t("с", "s")}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={3}
-                      step={0.1}
-                      value={currentEdit?.audioStartOffset ?? DEFAULT_AUDIO_OFFSET}
-                      onChange={(e) =>
-                        editingScene !== null && setSceneOffset(editingScene, Number(e.target.value))
-                      }
-                      className="w-full accent-accent"
-                    />
-                    <div className="mt-1 flex justify-between text-[10px] text-muted-foreground/60">
-                      <span>0{t("с", "s")}</span>
-                      <span>3{t("с", "s")}</span>
-                    </div>
-                    <p className="mt-2 text-[11px] text-muted-foreground/60">
-                      {t(
-                        "Ам нээгдэхээс өмнө дуу гарахаас сэргийлж, яриаг хойшлуулна.",
-                        "Delays the voice so the mouth opens before talking starts.",
-                      )}
-                    </p>
-                  </div>
+                  {/* Voice timeline — see the narration's waveform and drag where
+                      the voice starts within the scene's clip window. */}
+                  <AudioTimeline
+                    windowSec={maxDuration}
+                    offsetSec={currentEdit?.audioStartOffset ?? DEFAULT_AUDIO_OFFSET}
+                    maxOffsetSec={MAX_AUDIO_OFFSET}
+                    onOffsetChange={(s) => editingScene !== null && setSceneOffset(editingScene, s)}
+                    status={
+                      currentEdit?.narrationStatus === "generating"
+                        ? "generating"
+                        : currentEditNarrationFresh
+                          ? "ready"
+                          : currentEdit?.narrationStatus === "failed"
+                            ? "failed"
+                            : "idle"
+                    }
+                    audioUrl={currentEditNarrationFresh ? currentEdit?.narrationAudioUrl : undefined}
+                    audioDurationSec={currentEditNarrationFresh ? currentEdit?.narrationDurationSec : undefined}
+                    peaks={currentEditNarrationFresh ? currentEdit?.narrationPeaks : undefined}
+                    waveSupported={currentEditNarrationFresh ? currentEdit?.narrationWaveSupported : undefined}
+                    hasText={!!currentEdit && narrationTextFor(currentEdit).length > 0}
+                    onGenerate={() => editingScene !== null && ensureSceneNarration(editingScene)}
+                    locale={locale}
+                  />
                 </div>
               </div>
             )}

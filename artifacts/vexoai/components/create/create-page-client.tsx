@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { useSearchParams } from "next/navigation"
-import { Menu, Sparkles, X } from "lucide-react"
+import { Menu, X } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { useBlueprintChat } from "@/hooks/use-blueprint-chat"
 import { useVideoGeneration } from "@/hooks/use-video-generation"
@@ -247,8 +247,9 @@ function EmptyState({ locale }: { locale: "mn" | "en" }) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-accent/10 ring-1 ring-accent/20">
-        <Sparkles className="h-8 w-8 text-accent" />
+      <div className="relative flex h-16 w-16 items-center justify-center">
+        <span className="animate-breathe-ring absolute inset-0 rounded-3xl bg-accent/10 ring-1 ring-accent/20" />
+        <img src="/vexo-logo.png" alt="Vexo" className="animate-breathe relative h-10 w-10 object-contain" />
       </div>
       <div className="max-w-sm space-y-1.5">
         <h2 className="text-lg font-semibold">{t("Видео төлөвлөгөөгөө эхлүүлээрэй", "Start your video plan")}</h2>

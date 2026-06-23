@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3000} -H 0.0.0.0",
     "lint": "eslint .",
-    "test": "node --test \"lib/**/*.test.ts\""
+    "test": "NODE_OPTIONS='--import ./test/register.mjs' node --test \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

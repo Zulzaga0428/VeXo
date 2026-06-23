@@ -338,30 +338,32 @@ export function AppSidebar({ locale, onCollapsedChange, overlay = false, open, o
 
       {/* Drawer */}
       <aside
-        onMouseLeave={() => {
-          // In overlay mode on hover-capable devices, close when the cursor leaves
-          // so a hover-opened menu tidies itself away.
-          if (overlay && typeof window !== "undefined" && window.matchMedia("(hover: hover)").matches) {
-            setMobileOpen(false)
-          }
-        }}
         className={cn(
           "fixed left-0 top-0 z-50 h-full w-[78%] max-w-[280px] border-r border-border/50 bg-background flex flex-col transition-transform duration-300 ease-out",
           !overlay && "md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        {/* Drawer header */}
-        <div className="flex h-14 items-center justify-between border-b border-border/40 px-3">
+        {/* Drawer header. In overlay mode the close control lives in the page's
+            top bar (a single toggle), so we drop the internal X and shift the
+            brand right to clear that floating button. */}
+        <div
+          className={cn(
+            "flex h-14 items-center justify-between border-b border-border/40 px-3",
+            overlay && "pl-14",
+          )}
+        >
           <span className="font-semibold text-sm">VexoAi</span>
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close menu"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {!overlay && (
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         {sidebarContent}
       </aside>

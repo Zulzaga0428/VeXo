@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { Menu, Sparkles } from "lucide-react"
+import { Menu, Sparkles, X } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { useBlueprintChat } from "@/hooks/use-blueprint-chat"
 import { useVideoGeneration } from "@/hooks/use-video-generation"
@@ -107,10 +107,11 @@ export function CreatePageClient() {
         {/* Top bar */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
           <button
-            onClick={() => setNavOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted lg:hidden"
+            onClick={() => setNavOpen((v) => !v)}
+            aria-label={navOpen ? t("Цэс хаах", "Close menu") : t("Цэс нээх", "Open menu")}
+            className="relative z-[60] flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
           >
-            <Menu className="h-5 w-5" />
+            {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
           <div className="flex items-center gap-1.5">
             <Sparkles className="h-4 w-4 text-accent" />

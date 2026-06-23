@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
 import { bumpChatUsage, DAILY_CHAT_LIMIT } from "@/lib/credits"
 import type { RawBlueprint, VideoBlueprint } from "@/lib/blueprint"
+import { withRetry } from "@/lib/anthropic-retry"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -68,24 +69,6 @@ Return ONLY this JSON, no other text:
 {"reply":"...","blueprint":{"title":"...","language":"en","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":8,"script":"...","visualPrompt":"..."}]}}`
 }
 
-/** Retry up to `maxAttempts` times on transient 5xx errors from Anthropic. */
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 2): Promise<T> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      return await fn()
-    } catch (err: unknown) {
-      const isLast = attempt === maxAttempts - 1
-      const status = (err as Record<string, unknown>)?.status
-      if (!isLast && typeof status === "number" && status >= 500 && status < 600) {
-        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
-        continue
-      }
-      throw err
-    }
-  }
-  /* istanbul ignore next */
-  throw new Error("unreachable")
-}
 
 export async function POST(req: NextRequest) {
   let locale: "mn" | "en" = "mn"

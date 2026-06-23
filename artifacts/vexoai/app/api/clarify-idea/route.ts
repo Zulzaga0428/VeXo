@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
+import { withRetry } from "@/lib/anthropic-retry"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -52,12 +53,14 @@ Format (exactly this):
 or if the idea is clear:
 {"needsClarification": false, "questions": []}`
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 600,
-      system: systemPrompt,
-      messages: [{ role: "user", content: idea.trim() }],
-    })
+    const message = await withRetry(() =>
+      anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: [{ role: "user", content: idea.trim() }],
+      })
+    )
 
     const text = message.content[0].type === "text" ? message.content[0].text : ""
     const jsonMatch = text.match(/\{[\s\S]*\}/)

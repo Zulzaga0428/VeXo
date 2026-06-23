@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import { withRetry } from "@/lib/anthropic-retry"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -43,17 +44,19 @@ Rules:
 
     let message
     try {
-      message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 300,
-        messages: [
-          {
-            role: "user",
-            content: `Enhance this for a video ad: "${prompt}"`,
-          },
-        ],
-        system: systemPrompt,
-      })
+      message = await withRetry(() =>
+        anthropic.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 300,
+          messages: [
+            {
+              role: "user",
+              content: `Enhance this for a video ad: "${prompt}"`,
+            },
+          ],
+          system: systemPrompt,
+        })
+      )
     } catch (e) {
       await refundCredits(charge.userId, CREDIT_COST.enhance)
       throw e

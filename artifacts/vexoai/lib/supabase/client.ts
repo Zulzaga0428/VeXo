@@ -7,5 +7,12 @@ export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 
-  return createBrowserClient(url, anonKey)
+  return createBrowserClient(url, anonKey, {
+    // The Replit dev preview runs the app inside a cross-site iframe, so the
+    // auth cookies must be SameSite=None;Secure or the browser drops them and
+    // login appears to "not work". Production is accessed directly, so keep the
+    // stricter default there.
+    cookieOptions:
+      process.env.NODE_ENV !== 'production' ? { sameSite: 'none', secure: true } : undefined,
+  })
 }

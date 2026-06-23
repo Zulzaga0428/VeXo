@@ -9,9 +9,19 @@ const nextConfig = {
       { protocol: "https", hostname: "**" },
     ],
   },
-  // Dev only — needed for Replit's proxied iframe preview
+  // Dev only — needed for Replit's proxied iframe preview. The "*" wildcard is
+  // not honored by Next 16's HMR check, so pass the concrete Replit dev host(s).
   ...(process.env.NODE_ENV !== "production" && {
-    allowedDevOrigins: ["*"],
+    allowedDevOrigins: [
+      ...new Set(
+        [
+          process.env.REPLIT_DEV_DOMAIN,
+          ...(process.env.REPLIT_DOMAINS?.split(",") ?? []),
+        ]
+          .map((h) => h?.trim())
+          .filter(Boolean),
+      ),
+    ],
   }),
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

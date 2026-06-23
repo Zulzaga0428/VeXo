@@ -1,6 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// In the Replit dev preview the app is embedded in a cross-site iframe, so auth
+// cookies must be SameSite=None;Secure to be stored/sent. Production is accessed
+// directly, so the stricter default is kept there.
+const devCookieOptions =
+  process.env.NODE_ENV !== 'production' ? ({ sameSite: 'none', secure: true } as const) : {}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -24,7 +30,7 @@ export async function updateSession(request: NextRequest) {
             request,
           })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            supabaseResponse.cookies.set(name, value, { ...options, ...devCookieOptions }),
           )
         },
       },

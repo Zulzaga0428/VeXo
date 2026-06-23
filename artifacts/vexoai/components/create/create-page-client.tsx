@@ -248,8 +248,7 @@ function EmptyState({ locale }: { locale: "mn" | "en" }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
       <div className="relative flex h-16 w-16 items-center justify-center">
-        <span className="animate-breathe-ring absolute inset-0 rounded-3xl bg-accent/10 ring-1 ring-accent/20" />
-        <img src="/vexo-logo.png" alt="Vexo" className="animate-breathe relative h-10 w-10 object-contain" />
+        <img src="/vexo-logo.png" alt="Vexo" className="animate-breathe relative h-12 w-12 object-contain" />
       </div>
       <div className="max-w-sm space-y-1.5">
         <h2 className="text-lg font-semibold">{t("Видео төлөвлөгөөгөө эхлүүлээрэй", "Start your video plan")}</h2>

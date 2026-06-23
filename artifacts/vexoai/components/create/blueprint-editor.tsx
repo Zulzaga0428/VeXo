@@ -168,6 +168,15 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
 
         {/* Characters section */}
         <div className="rounded-2xl border border-border/60 bg-card/60 p-4 space-y-3">
+          {/* Section header */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">
+              {t("Дүрүүд", "Characters")}
+              <span className="ml-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">
+                {allCharacters.length}
+              </span>
+            </span>
+          </div>
           {/* Thumbnail row */}
           <div className="flex items-center gap-2 flex-wrap">
             {allCharacters.map((char, idx) => (

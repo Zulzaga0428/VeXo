@@ -15,8 +15,19 @@ import {
   videoStatus,
 } from "@/lib/create-api-client"
 import { sceneHasNarration, willStitch } from "@/lib/blueprint-costs"
-import type { SceneStatus, VideoBlueprint } from "@/lib/blueprint"
+import type { AvatarRef, BlueprintScene, SceneStatus, VideoBlueprint, VoiceRef } from "@/lib/blueprint"
 import type { PersistedRun, PersistedScene, SceneJob } from "@/lib/create-run"
+
+function getSceneCharacter(
+  scene: BlueprintScene,
+  bp: VideoBlueprint,
+): { avatar: AvatarRef; voice: VoiceRef } {
+  const idx = scene.characterIdx ?? 0
+  if (idx > 0 && bp.characters && bp.characters[idx - 1]) {
+    return bp.characters[idx - 1]
+  }
+  return { avatar: bp.avatar, voice: bp.voice }
+}
 
 // "paused" = a run was recovered from storage (refresh/closed tab) but not yet
 // resumed; already-paid work is kept and only the rest needs generating.
@@ -216,13 +227,14 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
 
         try {
           if (scene.type === "a_roll") {
-            if (!bp.avatar.imageUrl) throw new Error(t("Аватар зураг оруулаагүй байна", "No avatar image set"))
+            const char = getSceneCharacter(scene, bp)
+            if (!char.avatar.imageUrl) throw new Error(t("Аватар зураг оруулаагүй байна", "No avatar image set"))
             if (!sceneHasNarration(scene)) throw new Error(t("Яриа хоосон байна", "Script is empty"))
 
             // 1. TTS — skip if already generated or a job is already in flight.
             if (!st.ttsAudioUrl && !st.job) {
               patch(scene.id, { status: "tts", progress: 8 })
-              const tts = await generateTts(scene.script, bp.voice.voiceId, bp.voice.lang)
+              const tts = await generateTts(scene.script, char.voice.voiceId, char.voice.lang)
               if (!tts.ok) throw new Error(tts.error)
               st = { ...st, ttsAudioUrl: tts.data.audioUrl }
               setState(st)
@@ -236,7 +248,7 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
             } else {
               patch(scene.id, { status: "video", progress: 30 })
               const av = await generateAvatarVideo({
-                imageUrl: bp.avatar.imageUrl,
+                imageUrl: char.avatar.imageUrl,
                 audioUrl: st.ttsAudioUrl!,
                 prompt: scene.visualPrompt || undefined,
               })

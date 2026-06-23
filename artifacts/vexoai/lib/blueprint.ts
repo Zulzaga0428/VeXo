@@ -36,6 +36,12 @@ export interface AvatarRef {
   label?: string
 }
 
+export interface Character {
+  id: string
+  avatar: AvatarRef
+  voice: VoiceRef
+}
+
 export interface BlueprintScene {
   id: string
   type: SceneType
@@ -45,6 +51,9 @@ export interface BlueprintScene {
   script: string
   // English prompt that drives the video model (motion / cinematography).
   visualPrompt: string
+  // Which character speaks in this scene (a_roll only).
+  // 0 / undefined = primary (avatar+voice); 1+ = characters[n-1]
+  characterIdx?: number
 
   // ── runtime fields, filled during generation (not sent by the agent) ──
   status?: SceneStatus
@@ -64,8 +73,11 @@ export interface VideoBlueprint {
   captions: boolean
   // Approximate total runtime (sum of scene durations), informational.
   durationSec: number
+  // Primary character (first actor)
   avatar: AvatarRef
   voice: VoiceRef
+  // Additional characters (index 1, 2, …)
+  characters?: Character[]
   scenes: BlueprintScene[]
 }
 

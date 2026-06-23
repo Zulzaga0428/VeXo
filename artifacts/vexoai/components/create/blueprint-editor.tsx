@@ -270,6 +270,8 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
               scene={scene}
               canDelete={blueprint.scenes.length > 1}
               characters={allCharacters}
+              orientation={blueprint.orientation}
+              language={blueprint.language}
               onChange={(p) => patchScene(scene.id, p)}
               onRemove={() => removeScene(scene.id)}
             />
@@ -324,6 +326,8 @@ function SceneCard({
   scene,
   canDelete,
   characters,
+  orientation,
+  language,
   onChange,
   onRemove,
 }: {
@@ -332,49 +336,54 @@ function SceneCard({
   scene: BlueprintScene
   canDelete: boolean
   characters: Character[]
+  orientation: Orientation
+  language: "mn" | "en"
   onChange: (p: Partial<BlueprintScene>) => void
   onRemove: () => void
 }) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
-  const types: { value: SceneType; labelMn: string; labelEn: string; icon: typeof User }[] = [
-    { value: "a_roll", labelMn: "Танилцуулагч", labelEn: "Presenter", icon: User },
-    { value: "b_roll", labelMn: "Дүрслэл", labelEn: "Cinematic", icon: Clapperboard },
-  ]
-
   const charIdx = scene.characterIdx ?? 0
 
+  const orientationLabel: Record<Orientation, string> = {
+    "9:16": t("Босоо", "Portrait"),
+    "16:9": t("Хэвтээ", "Landscape"),
+    "1:1": t("Дөрвөлжин", "Square"),
+  }
+
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-3.5 space-y-2.5">
-      {/* Scene header */}
-      <div className="flex items-center justify-between">
+    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">
             {index + 1}
           </span>
-          <div className="flex gap-1">
-            {types.map((ty) => {
-              const Icon = ty.icon
-              return (
-                <button
-                  key={ty.value}
-                  onClick={() => onChange({ type: ty.value })}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-all",
-                    scene.type === ty.value
-                      ? "bg-accent/15 text-accent ring-1 ring-accent/30"
-                      : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
-                  )}
-                >
-                  <Icon className="h-2.5 w-2.5" />
-                  {t(ty.labelMn, ty.labelEn)}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Character selector — only for a_roll with multiple characters */}
+          {/* Type toggle */}
+          <button
+            onClick={() => onChange({ type: "a_roll" })}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-all",
+              scene.type === "a_roll"
+                ? "bg-accent/15 text-accent ring-1 ring-accent/30"
+                : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
+            )}
+          >
+            <User className="h-2.5 w-2.5" />
+            {t("Танилцуулагч", "Presenter")}
+          </button>
+          <button
+            onClick={() => onChange({ type: "b_roll" })}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-all",
+              scene.type === "b_roll"
+                ? "bg-accent/15 text-accent ring-1 ring-accent/30"
+                : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
+            )}
+          >
+            <Clapperboard className="h-2.5 w-2.5" />
+            {t("Дүрслэл", "Cinematic")}
+          </button>
+          {/* Character mini-selector (a_roll + multi-char) */}
           {scene.type === "a_roll" && characters.length > 1 && (
             <div className="flex items-center gap-0.5">
               {characters.map((char, idx) => (
@@ -399,7 +408,10 @@ function SceneCard({
               ))}
             </div>
           )}
+        </div>
 
+        <div className="flex items-center gap-1.5">
+          {/* Duration stepper */}
           <div className="flex items-center overflow-hidden rounded-lg border border-border/50">
             <button
               onClick={() => onChange({ durationSec: Math.max(3, scene.durationSec - 1) })}
@@ -426,35 +438,55 @@ function SceneCard({
         </div>
       </div>
 
-      {/* Script */}
-      <label className="block space-y-1">
-        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-          <Mic className="h-2.5 w-2.5" />
-          {scene.type === "a_roll" ? t("Яриа (заавал)", "Script (required)") : t("Хадмал яриа", "Voiceover (opt.)")}
-        </span>
-        <textarea
-          value={scene.script}
-          onChange={(e) => onChange({ script: e.target.value })}
-          rows={2}
-          placeholder={t("Дэлгэцэн дээр юу хэлэх вэ…", "What is said on screen…")}
-          className="w-full resize-none rounded-xl border border-border/40 bg-muted/20 px-3 py-2 text-sm outline-none transition focus:border-accent/40 focus:ring-1 focus:ring-accent/15 placeholder:text-muted-foreground/40"
-        />
-      </label>
+      {/* Script | Style — HeyGen-style 2-column */}
+      <div className="grid grid-cols-2 divide-x divide-border/40">
+        <div className="p-3 space-y-1.5">
+          <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+            <Mic className="h-2.5 w-2.5" />
+            {scene.type === "a_roll" ? t("Яриа", "Script") : t("Хадмал", "Voiceover")}
+          </span>
+          <textarea
+            value={scene.script}
+            onChange={(e) => onChange({ script: e.target.value })}
+            rows={4}
+            placeholder={
+              scene.type === "a_roll"
+                ? t("Юу хэлэх вэ…", "What is said…")
+                : t("Дуут тайлбар (заавал биш)…", "Voiceover (optional)…")
+            }
+            className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/30"
+          />
+        </div>
+        <div className="p-3 space-y-1.5">
+          <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+            <Wand2 className="h-2.5 w-2.5" />
+            {t("Дүрслэл", "Style")}
+          </span>
+          <textarea
+            value={scene.visualPrompt}
+            onChange={(e) => onChange({ visualPrompt: e.target.value })}
+            rows={4}
+            placeholder={t("Визуал дүрслэл (англиар)…", "Visual description (in English)…")}
+            className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/30"
+          />
+        </div>
+      </div>
 
-      {/* Visual prompt */}
-      <label className="block space-y-1">
-        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-          <Wand2 className="h-2.5 w-2.5" />
-          {t("Дүрслэл (англиар)", "Visual prompt (EN)")}
+      {/* Details chips — like HeyGen's footer */}
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 bg-muted/10 px-3 py-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+          ⏱ {scene.durationSec}s
         </span>
-        <textarea
-          value={scene.visualPrompt}
-          onChange={(e) => onChange({ visualPrompt: e.target.value })}
-          rows={2}
-          placeholder={t("Юу харагдах вэ (англиар бичнэ)…", "What we see (write in English)…")}
-          className="w-full resize-none rounded-xl border border-border/40 bg-muted/20 px-3 py-2 text-sm outline-none transition focus:border-accent/40 focus:ring-1 focus:ring-accent/15 placeholder:text-muted-foreground/40"
-        />
-      </label>
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+          📐 {orientationLabel[orientation]}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+          🌐 {language === "mn" ? "mn-MN" : "en-US"}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+          {scene.type === "a_roll" ? `🎙 ${t("Танилцуулагч", "Presenter")}` : `🎬 ${t("Дүрслэл", "Cinematic")}`}
+        </span>
+      </div>
     </div>
   )
 }

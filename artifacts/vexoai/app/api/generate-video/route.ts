@@ -50,8 +50,10 @@ export async function POST(request: NextRequest) {
         generateAudio: generateAudio === true,
       })
     } catch (e) {
-      // Generation failed after charging — always refund the user.
-      await refundCredits(charge.userId, cost)
+      // Generation failed after charging — always attempt to refund the user.
+      // refundCredits is atomic and reports success, so we only tell the user
+      // "(Кредит буцаагдсан)" when the credit actually went back.
+      const refunded = await refundCredits(charge.userId, cost)
 
       // Surface a clear message when the FAL provider account is out of balance,
       // instead of a confusing "Forbidden" / 500 to the end user.
@@ -64,11 +66,10 @@ export async function POST(request: NextRequest) {
         (e as any)?.status === 403 ||
         /balance|locked|exhausted/i.test(text)
       ) {
+        const base =
+          "Видео үүсгэх үйлчилгээ түр боломжгүй байна. Та түр хүлээгээд дахин оролдоно уу."
         return NextResponse.json(
-          {
-            error:
-              "Видео үүсгэх үйлчилгээ түр боломжгүй байна. Та түр хүлээгээд дахин оролдоно уу. (Кредит буцаагдсан)",
-          },
+          { error: refunded ? `${base} (Кредит буцаагдсан)` : base },
           { status: 503 }
         )
       }

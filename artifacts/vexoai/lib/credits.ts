@@ -55,14 +55,44 @@ export async function bumpChatUsage(): Promise<ChatLimitResult> {
   return { ok: true, userId: user.id, used, remaining: Math.max(0, DAILY_CHAT_LIMIT - used) }
 }
 
-// Refund credits if generation fails after charging
-export async function refundCredits(userId: string, cost: number) {
-  const supabase = await createClient()
-  const { data: profile } = await supabase.from("profiles").select("credits").eq("id", userId).single()
-  await supabase
-    .from("profiles")
-    .update({ credits: (profile?.credits || 0) + cost })
-    .eq("id", userId)
+// Refund credits after a SYNCHRONOUS failure (the action errored right after
+// charging — e.g. the FAL submit threw, or validation failed post-charge).
+// Unlike the requestId-keyed async refunds there is no poll/sweep here, so this
+// is a one-shot credit-back with no double-refund vector — the only risk is a
+// lost-update race under concurrency, which the atomic `credit_user` RPC removes.
+//
+// ATOMIC ONLY, by design: the credit is a single-statement increment via the
+// `credit_user` RPC (service-role admin client, so a refund never depends on the
+// user's session). We deliberately do NOT fall back to a client-side
+// read-modify-write — that is the exact race this task removes and it would let
+// a refund be lost while we report success. Returns true ONLY when the credit
+// truly applied; on any error or missing profile row it logs a greppable
+// REFUND_FAILED (alert on this) and returns false — never silently swallows.
+//
+// DEPLOY DEPENDENCY: requires `credit_user` from supabase/migrations/
+// 0001_generation_charges.sql to be applied in Supabase. Until it is, refunds
+// fail loudly (logged) instead of being silently mis-handled.
+export async function refundCredits(userId: string, cost: number): Promise<boolean> {
+  const admin = createAdminClient()
+  try {
+    const { data, error } = await admin.rpc("credit_user", {
+      p_user_id: userId,
+      p_amount: cost,
+    })
+    if (error) {
+      console.error("[credits] REFUND_FAILED rpc error", { userId, cost, error: error.message })
+      return false
+    }
+    if (data === null) {
+      // No profile row matched (or non-positive amount) — nothing was credited.
+      console.error("[credits] REFUND_FAILED no profile row", { userId, cost })
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error("[credits] REFUND_FAILED rpc threw", { userId, cost }, e)
+    return false
+  }
 }
 
 export type ChargeKind = "video" | "avatar"

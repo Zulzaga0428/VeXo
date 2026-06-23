@@ -143,10 +143,46 @@ begin
 end;
 $$;
 
+-- Atomically credit a user's balance by a POSITIVE amount in a SINGLE statement
+-- so concurrent credit changes (one refund racing another refund, or racing an
+-- atomic deduct_credits) can't clobber each other through a read-modify-write.
+-- Used by refundCredits() to return credits after a SYNCHRONOUS failure (the
+-- action errored right after charging). Unlike the requestId-keyed async refunds
+-- there is no poll/sweep here, so this is a one-shot credit-back with no
+-- idempotency key and no double-refund vector — its only job is to be atomic.
+-- Returns the new balance, or NULL if no such profile row exists or the amount
+-- is not positive, so the caller can tell whether the credit really applied.
+create or replace function public.credit_user(
+  p_user_id uuid,
+  p_amount  integer
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_credits integer;
+begin
+  if p_amount is null or p_amount <= 0 then
+    return null;  -- nothing to credit
+  end if;
+
+  update public.profiles
+     set credits = coalesce(credits, 0) + p_amount
+   where id = p_user_id
+  returning credits into v_credits;
+
+  return v_credits;  -- NULL if no row matched -> caller treats as failure
+end;
+$$;
+
 -- Lock the functions down to the server only.
 revoke all on function public.refund_generation_charge(text) from public, anon, authenticated;
 revoke all on function public.settle_generation_charge(text) from public, anon, authenticated;
 revoke all on function public.compensate_unrecorded_charge(text, uuid, integer, text) from public, anon, authenticated;
+revoke all on function public.credit_user(uuid, integer) from public, anon, authenticated;
 grant execute on function public.refund_generation_charge(text) to service_role;
 grant execute on function public.settle_generation_charge(text) to service_role;
 grant execute on function public.compensate_unrecorded_charge(text, uuid, integer, text) to service_role;
+grant execute on function public.credit_user(uuid, integer) to service_role;

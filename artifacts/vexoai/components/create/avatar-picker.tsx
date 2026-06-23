@@ -78,7 +78,7 @@ export function AvatarPicker({ locale, avatar, orientation, required, onChange }
           <button
             onClick={() => fileRef.current?.click()}
             disabled={busy !== null}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:border-primary/40 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:border-accent/50 disabled:opacity-50"
           >
             {busy === "upload" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             {t("Зураг оруулах", "Upload")}
@@ -88,7 +88,7 @@ export function AvatarPicker({ locale, avatar, orientation, required, onChange }
             disabled={busy !== null}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-50",
-              showAi ? "border-primary bg-primary/5 text-primary" : "border-border bg-background hover:border-primary/40",
+              showAi ? "border-accent bg-accent/5 text-accent" : "border-border bg-background hover:border-accent/50",
             )}
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -119,7 +119,7 @@ export function AvatarPicker({ locale, avatar, orientation, required, onChange }
           <button
             onClick={onGenerate}
             disabled={!prompt.trim() || busy !== null}
-            className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground disabled:opacity-50"
           >
             {busy === "ai" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             {t("Үүсгэх", "Make")}

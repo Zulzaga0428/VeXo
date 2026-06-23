@@ -51,15 +51,15 @@ export function ChatPanel({
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Sparkles className="h-4 w-4 text-primary" />
+        <Sparkles className="h-4 w-4 text-accent" />
         <span className="text-sm font-medium">{t("Найруулагч", "Director")}</span>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-              <Sparkles className="h-6 w-6 text-primary" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
+              <Sparkles className="h-6 w-6 text-accent" />
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">{t("Юу хийх вэ?", "What should we make?")}</p>
@@ -76,7 +76,7 @@ export function ChatPanel({
                   key={s}
                   onClick={() => onSubmit(s)}
                   disabled={disabled}
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-left text-xs text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                  className="rounded-lg border border-border bg-background px-3 py-2 text-left text-xs text-muted-foreground transition hover:border-accent/50 hover:bg-accent/5 hover:text-foreground disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -91,7 +91,7 @@ export function ChatPanel({
               className={cn(
                 "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm",
                 m.role === "user"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-accent text-accent-foreground"
                   : "bg-muted text-foreground",
               )}
             >
@@ -105,7 +105,7 @@ export function ChatPanel({
                       key={`${q.question}-${opt}`}
                       onClick={() => onAnswerClarify(opt)}
                       disabled={thinking || disabled}
-                      className="rounded-full border border-border bg-background px-3 py-1 text-xs transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                      className="rounded-full border border-border bg-background px-3 py-1 text-xs transition hover:border-accent/50 hover:text-accent disabled:opacity-50"
                     >
                       {opt}
                     </button>
@@ -125,7 +125,7 @@ export function ChatPanel({
       </div>
 
       <div className="border-t border-border p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2">
+        <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2 transition-colors focus-within:border-accent/50">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -149,7 +149,7 @@ export function ChatPanel({
           <button
             onClick={send}
             disabled={!input.trim() || thinking || disabled}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition disabled:opacity-40"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition hover:opacity-90 disabled:opacity-40"
           >
             {thinking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>

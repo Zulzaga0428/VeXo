@@ -67,7 +67,7 @@ export function GenerationTimeline({
       {phase === "running" && (
         <div className="mb-4">
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${overall}%` }} />
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${overall}%` }} />
           </div>
         </div>
       )}
@@ -102,13 +102,13 @@ export function GenerationTimeline({
                   ) : prog.status === "idle" ? (
                     <span className="text-[11px] text-muted-foreground">—</span>
                   ) : (
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <Loader2 className="h-5 w-5 animate-spin text-accent" />
                   )}
                 </div>
               </div>
               {prog.status !== "idle" && prog.status !== "done" && prog.status !== "failed" && (
                 <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${prog.progress}%` }} />
+                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${prog.progress}%` }} />
                 </div>
               )}
             </div>
@@ -128,7 +128,7 @@ export function GenerationTimeline({
             </button>
             <button
               onClick={onRetry}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-foreground transition hover:opacity-90"
             >
               <RotateCcw className="h-4 w-4" />
               {phase === "paused" ? t("Үргэлжлүүлэх", "Resume") : t("Дахин оролдох", "Retry")}

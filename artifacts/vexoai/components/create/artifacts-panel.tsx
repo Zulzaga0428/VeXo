@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, FileText, Loader2, Video } from "lucide-react"
+import { CheckCircle2, FileText, Layers, Loader2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { VideoBlueprint } from "@/lib/blueprint"
 import type { GenPhase } from "@/hooks/use-video-generation"
@@ -29,7 +29,8 @@ export function ArtifactsPanel({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Layers className="h-4 w-4 text-accent" />
         <span className="text-sm font-medium">{t("Артефактууд", "Artifacts")}</span>
       </div>
 
@@ -46,8 +47,8 @@ export function ArtifactsPanel({
             className={cn(
               "w-full rounded-xl border p-3 text-left transition",
               view === "plan"
-                ? "border-primary bg-primary/5"
-                : "border-border bg-card hover:border-primary/40",
+                ? "border-accent bg-accent/5"
+                : "border-border bg-card hover:border-accent/50",
             )}
           >
             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -64,8 +65,8 @@ export function ArtifactsPanel({
             className={cn(
               "w-full rounded-xl border p-3 text-left transition",
               view === "generation"
-                ? "border-primary bg-primary/5"
-                : "border-border bg-card hover:border-primary/40",
+                ? "border-accent bg-accent/5"
+                : "border-border bg-card hover:border-accent/50",
             )}
           >
             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -73,7 +74,7 @@ export function ArtifactsPanel({
               {phase === "done" ? t("Бэлэн видео", "Final Video") : t("Үүсгэлт", "Generation")}
             </div>
             <div className="flex items-center gap-2 text-sm">
-              {phase === "running" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {phase === "running" && <Loader2 className="h-4 w-4 animate-spin text-accent" />}
               {phase === "done" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
               {phase === "error" && <Video className="h-4 w-4 text-destructive" />}
               <span className="text-muted-foreground">

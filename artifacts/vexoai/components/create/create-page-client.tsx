@@ -113,7 +113,7 @@ export function CreatePageClient() {
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 text-primary" />
+            <Sparkles className="h-4 w-4 text-accent" />
             <span className="text-sm font-semibold">{t("Видео үүсгэх", "Create Video")}</span>
           </div>
         </header>
@@ -203,8 +203,8 @@ function EmptyState({ locale }: { locale: "mn" | "en" }) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10">
-        <Sparkles className="h-8 w-8 text-primary" />
+      <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-accent/10 ring-1 ring-accent/20">
+        <Sparkles className="h-8 w-8 text-accent" />
       </div>
       <div className="max-w-sm space-y-1.5">
         <h2 className="text-lg font-semibold">{t("Видео төлөвлөгөөгөө эхлүүлээрэй", "Start your video plan")}</h2>

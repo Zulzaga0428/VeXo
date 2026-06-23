@@ -56,7 +56,7 @@ export function VideoResult({
             onClick={() => setActive(finalUrl)}
             className={cn(
               "shrink-0 rounded-lg border px-3 py-1.5 text-xs transition",
-              active === finalUrl ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40",
+              active === finalUrl ? "border-accent bg-accent/10 text-accent" : "border-border hover:border-accent/50",
             )}
           >
             {t("Бүтэн", "Full")}
@@ -67,7 +67,7 @@ export function VideoResult({
               onClick={() => setActive(s.videoUrl!)}
               className={cn(
                 "shrink-0 rounded-lg border px-3 py-1.5 text-xs transition",
-                active === s.videoUrl ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40",
+                active === s.videoUrl ? "border-accent bg-accent/10 text-accent" : "border-border hover:border-accent/50",
               )}
             >
               {t("Дүр", "Scene")} {i + 1}
@@ -82,7 +82,7 @@ export function VideoResult({
           download
           target="_blank"
           rel="noopener noreferrer"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent py-2.5 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition hover:opacity-90"
         >
           <Download className="h-4 w-4" />
           {t("Татах", "Download")}

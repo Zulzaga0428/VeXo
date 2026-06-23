@@ -92,8 +92,8 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
                   className={cn(
                     "flex-1 rounded-lg border px-2 py-1.5 text-xs transition",
                     blueprint.orientation === o.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/40",
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border hover:border-accent/50",
                   )}
                 >
                   {t(o.labelMn, o.labelEn)}
@@ -112,8 +112,8 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
                   className={cn(
                     "flex-1 rounded-lg border px-2 py-1.5 text-xs transition",
                     blueprint.model === m
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/40",
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border hover:border-accent/50",
                   )}
                 >
                   {m === "veo3" ? t("Кино", "Cinematic") : t("Энгийн", "Standard")}
@@ -170,7 +170,7 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
 
           <button
             onClick={addScene}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-3 text-xs text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-3 text-xs text-muted-foreground transition hover:border-accent/50 hover:bg-accent/5 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
             {t("Дүр нэмэх", "Add scene")}
@@ -198,7 +198,7 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
         <button
           onClick={onGenerate}
           disabled={blocked}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
         >
           <Sparkles className="h-4 w-4" />
           {t("Видео үүсгэх", "Generate video")} · {credits} {t("кредит", "credits")}
@@ -246,8 +246,8 @@ function SceneCard({
                   className={cn(
                     "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition",
                     scene.type === ty.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted-foreground hover:border-primary/40",
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-muted-foreground hover:border-accent/50",
                   )}
                 >
                   <Icon className="h-3 w-3" />
@@ -291,7 +291,7 @@ function SceneCard({
           onChange={(e) => onChange({ script: e.target.value })}
           rows={2}
           placeholder={t("Дэлгэцэн дээр юу хэлэх вэ…", "What is said on screen…")}
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/40"
+          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent/50"
         />
       </label>
 
@@ -305,7 +305,7 @@ function SceneCard({
           onChange={(e) => onChange({ visualPrompt: e.target.value })}
           rows={2}
           placeholder={t("Юу харагдах вэ (англиар бичнэ)…", "What we see (write in English)…")}
-          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/40"
+          className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent/50"
         />
       </label>
     </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { useSearchParams } from "next/navigation"
 import { Menu, Sparkles, X } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -18,6 +18,32 @@ export function CreatePageClient() {
   const [blueprint, setBlueprint] = useState<VideoBlueprint | null>(null)
   const [view, setView] = useState<CreateView>("plan")
   const [navOpen, setNavOpen] = useState(false)
+  const [chatWidth, setChatWidth] = useState(320)
+  const [artifactsCollapsed, setArtifactsCollapsed] = useState(false)
+
+  // Drag-to-resize the Director (chat) panel. The workspace starts at the
+  // viewport's left edge (the sidebar is an overlay), so width tracks clientX.
+  const startResize = useCallback(
+    (e: ReactPointerEvent) => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = chatWidth
+      const onMove = (ev: PointerEvent) => {
+        setChatWidth(Math.min(600, Math.max(240, startW + ev.clientX - startX)))
+      }
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove)
+        window.removeEventListener("pointerup", onUp)
+        document.body.style.cursor = ""
+        document.body.style.userSelect = ""
+      }
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+      window.addEventListener("pointermove", onMove)
+      window.addEventListener("pointerup", onUp)
+    },
+    [chatWidth],
+  )
 
   // Keep a ref so the chat hook always reads the latest plan in its closures.
   const blueprintRef = useRef<VideoBlueprint | null>(null)
@@ -121,8 +147,8 @@ export function CreatePageClient() {
 
         {/* 3-panel workspace */}
         <div className="flex min-h-0 flex-1">
-          {/* Chat */}
-          <div className="w-[320px] shrink-0 border-r border-border max-lg:w-[280px] max-md:hidden">
+          {/* Chat (Director) — drag the handle on its right edge to resize */}
+          <div style={{ width: chatWidth }} className="shrink-0 border-r border-border max-md:hidden">
             <ChatPanel
               locale={locale}
               messages={chat.messages}
@@ -134,8 +160,22 @@ export function CreatePageClient() {
             />
           </div>
 
-          {/* Artifacts */}
-          <div className="w-[240px] shrink-0 border-r border-border max-xl:w-[200px] max-lg:hidden">
+          {/* Resize handle for the Director panel */}
+          <div
+            onPointerDown={startResize}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t("Найруулагчийн өргөнийг тохируулах", "Resize director panel")}
+            className="relative w-px shrink-0 cursor-col-resize bg-border transition-colors hover:bg-accent/60 max-md:hidden"
+          >
+            <span className="absolute inset-y-0 -left-1.5 -right-1.5" />
+          </div>
+
+          {/* Creations — collapsible into a narrow rail */}
+          <div
+            style={{ width: artifactsCollapsed ? 44 : 240 }}
+            className="shrink-0 overflow-hidden border-r border-border transition-[width] duration-200 ease-out max-lg:hidden"
+          >
             <ArtifactsPanel
               locale={locale}
               blueprint={blueprint}
@@ -143,6 +183,8 @@ export function CreatePageClient() {
               finalUrl={gen.finalUrl}
               view={view}
               onSelectView={setView}
+              collapsed={artifactsCollapsed}
+              onToggleCollapsed={() => setArtifactsCollapsed((v) => !v)}
             />
           </div>
 

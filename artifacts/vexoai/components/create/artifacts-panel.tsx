@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckCircle2, FileText, Layers, Loader2, Video } from "lucide-react"
+import { CheckCircle2, ChevronsLeft, ChevronsRight, FileText, Layers, Loader2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { VideoBlueprint } from "@/lib/blueprint"
 import type { GenPhase } from "@/hooks/use-video-generation"
@@ -15,6 +15,8 @@ interface ArtifactsPanelProps {
   finalUrl: string | null
   view: CreateView
   onSelectView: (v: CreateView) => void
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
 export function ArtifactsPanel({
@@ -24,14 +26,75 @@ export function ArtifactsPanel({
   finalUrl,
   view,
   onSelectView,
+  collapsed = false,
+  onToggleCollapsed,
 }: ArtifactsPanelProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
+
+  // Collapsed rail — a narrow strip with just the expand control and view icons.
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-full flex-col items-center gap-1 bg-background py-3">
+        {onToggleCollapsed && (
+          <button
+            onClick={onToggleCollapsed}
+            title={t("Дэлгэх", "Expand")}
+            aria-label={t("Дэлгэх", "Expand")}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <ChevronsRight className="h-4 w-4" />
+          </button>
+        )}
+        <div className="my-1 h-px w-6 bg-border/60" />
+        {blueprint && (
+          <button
+            onClick={() => onSelectView("plan")}
+            title={t("Видео төлөвлөгөө", "Video Plan")}
+            aria-label={t("Видео төлөвлөгөө", "Video Plan")}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg transition",
+              view === "plan"
+                ? "bg-accent/15 text-accent"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <FileText className="h-4 w-4" />
+          </button>
+        )}
+        {phase !== "idle" && (
+          <button
+            onClick={() => onSelectView("generation")}
+            title={phase === "done" ? t("Бэлэн видео", "Final Video") : t("Үүсгэлт", "Generation")}
+            aria-label={phase === "done" ? t("Бэлэн видео", "Final Video") : t("Үүсгэлт", "Generation")}
+            className={cn(
+              "relative flex h-8 w-8 items-center justify-center rounded-lg transition",
+              view === "generation"
+                ? "bg-accent/15 text-accent"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            {phase === "running" ? <Loader2 className="h-4 w-4 animate-spin text-accent" /> : <Video className="h-4 w-4" />}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col bg-background">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Layers className="h-4 w-4 text-accent" />
-        <span className="text-sm font-medium">{t("Артефактууд", "Artifacts")}</span>
+        <span className="text-sm font-medium">{t("Бүтээл", "Creations")}</span>
+        {onToggleCollapsed && (
+          <button
+            onClick={onToggleCollapsed}
+            title={t("Нарийсгах", "Collapse")}
+            aria-label={t("Нарийсгах", "Collapse")}
+            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <ChevronsLeft className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-3">

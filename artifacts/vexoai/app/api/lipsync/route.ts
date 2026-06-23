@@ -57,22 +57,30 @@ export async function POST(request: NextRequest) {
       // Diffusion-based: synthesises the mouth region in latent space so there
       // is no hard edge between the original face and the lip area. Produces
       // the most natural, human-looking result especially on close-up shots.
-      const result = await fal.subscribe("fal-ai/latentsync", {
-        input: {
-          video_url: videoUrl,
-          audio_url: audioUrl,
-          // guidance_scale controls how strictly the model follows the audio
-          // phonemes. 2.5 is the sweet spot — higher values over-animate.
-          guidance_scale: 2.5,
-          // inference_steps: more steps = smoother but slower. 40 is optimal.
-          inference_steps: 40,
-        } as never,
-        logs: false,
-      }) as { data?: { video?: { url?: string }; video_url?: string } }
+      try {
+        const result = await fal.subscribe("fal-ai/latentsync", {
+          input: {
+            video_url: videoUrl,
+            audio_url: audioUrl,
+            // guidance_scale controls how strictly the model follows the audio
+            // phonemes. 2.5 is the sweet spot — higher values over-animate.
+            guidance_scale: 2.5,
+            // inference_steps: more steps = smoother but slower. 40 is optimal.
+            inference_steps: 40,
+          } as never,
+          logs: false,
+        }) as { data?: { video?: { url?: string }; video_url?: string } }
+        syncedUrl = result.data?.video?.url || result.data?.video_url
+      } catch (e) {
+        // LatentSync can THROW on difficult angles / model errors — don't let
+        // that abort lip-sync entirely, fall through to lipsync-2-pro below.
+        console.warn(
+          "[lipsync] LatentSync threw, falling back to lipsync-2-pro:",
+          e instanceof Error ? e.message : e,
+        )
+      }
 
-      syncedUrl = result.data?.video?.url || result.data?.video_url
-
-      // LatentSync can occasionally fail on difficult angles — fall back to pro.
+      // LatentSync produced nothing (no url, or it threw) — fall back to pro.
       if (!syncedUrl) {
         console.warn("[lipsync] LatentSync returned no video, falling back to lipsync-2-pro")
         const fallback = await fal.subscribe("fal-ai/sync-lipsync/v2", {

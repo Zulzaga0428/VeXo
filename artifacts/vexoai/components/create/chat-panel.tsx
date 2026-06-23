@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Loader2, Plus, Sparkles } from "lucide-react"
+import { ArrowUp, Loader2, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/hooks/use-blueprint-chat"
 
@@ -68,9 +68,6 @@ export function ChatPanel({
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
-              <Sparkles className="h-6 w-6 text-accent" />
-            </div>
             <div className="space-y-1">
               <p className="text-sm font-medium">{t("Юу хийх вэ?", "What should we make?")}</p>
               <p className="text-xs text-muted-foreground">

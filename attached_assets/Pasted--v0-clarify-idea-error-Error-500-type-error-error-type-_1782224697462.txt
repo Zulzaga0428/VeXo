@@ -1,0 +1,111 @@
+[v0] clarify-idea error: Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CcLLc1TWKr3QDrRbFqJAB"}
+    at async y (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:51)
+    at async l (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:4033)
+    at async o (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:5074) {
+  status: 500,
+  headers: Headers {
+    date: 'Tue, 23 Jun 2026 14:20:24 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CcLLc1TWKr3QDrRbFqJAB',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'f5801920-864c-4092-8980-1f58be940ee8',
+    traceresponse: '00-1a266b307b0f47c6384b1f109d271091-3a40f6e860a37b8d-01',
+    server: 'cloudflare',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=.a.8oMCtgXteJPkQUgxChkEZKP1.vYqvdnPa3THpanc-1782224424.2777905-1.0.1.1-ngFWcS4OUYhOumm7kFoyB24K88QA8cYapZ_H0k9Ayq8; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': 'a104221bb9b8b586-SJC'
+  },
+  requestID: 'req_011CcLLc1TWKr3QDrRbFqJAB',
+  error: {
+    type: 'error',
+    error: { type: 'api_error', message: 'Internal server error' },
+    request_id: 'req_011CcLLc1TWKr3QDrRbFqJAB'
+  },
+  type: 'api_error'
+}
+Blueprint error: Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CcLLc7cLXGU1D1eoAY7Z3"}
+    at async E (.next/server/chunks/[root-of-the-server]__0i812es._.js:15:42)
+    at async l (.next/server/chunks/[root-of-the-server]__0i812es._.js:45:4250)
+    at async o (.next/server/chunks/[root-of-the-server]__0i812es._.js:45:5291) {
+  status: 500,
+  headers: Headers {
+    date: 'Tue, 23 Jun 2026 14:20:26 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CcLLc7cLXGU1D1eoAY7Z3',
+  requestID: 'req_011CcLLc7cLXGU1D1eoAY7Z3',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'f5801920-864c-4092-8980-1f58be940ee8',
+  error: {
+    traceresponse: '00-e62b616538f3387b12f20ac231862e3f-f6b16e3599f81b3d-01',
+    type: 'error',
+    server: 'cloudflare',
+    error: { type: 'api_error', message: 'Internal server error' },
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    request_id: 'req_011CcLLc7cLXGU1D1eoAY7Z3'
+    'cf-cache-status': 'DYNAMIC',
+  },
+    'set-cookie': '_cfuvid=iTDJI9TVP35XNIpTX.inj7oBpU0e71Gp0nufhJRvkLs-1782224425.7175243-1.0.1.1-S4g1UXezErHbJ8WbzdQ_8Kg4BrR0WBS8qHFLTiuRg00; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+  type: 'api_error'
+    'x-robots-tag': 'none',
+    'cf-ray': 'a1042224bd65b586-SJC'
+}
+  },
+[v0] clarify-idea error: Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CcLLe3qSBNw8HsAaHTo7C"}
+    at async y (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:51)
+    at async l (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:4033)
+    at async o (.next/server/chunks/[root-of-the-server]__0uys961._.js:25:5074) {
+  status: 500,
+  headers: Headers {
+    date: 'Tue, 23 Jun 2026 14:20:52 GMT',
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CcLLe3qSBNw8HsAaHTo7C',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    'anthropic-organization-id': 'f5801920-864c-4092-8980-1f58be940ee8',
+    traceresponse: '00-0a0eba2d7a2784c72526f87769dba0af-55e84d2e3da10bdd-01',
+    server: 'cloudflare',
+    'content-encoding': 'gzip',
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=LyL70CBF4MCMaaMgIIIhBZwBqCGlPNiDa28eftdAEc8-1782224451.9669235-1.0.1.1-9kcV49WBgItzOZA3HLhMjurPSZ3fho8p3v0vpWBwoos; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'x-robots-tag': 'none',
+    'cf-ray': 'a10422c8cbb5f4c4-SJC'
+  },
+  requestID: 'req_011CcLLe3qSBNw8HsAaHTo7C',
+  error: {
+    type: 'error',
+    error: { type: 'api_error', message: 'Internal server error' },
+    request_id: 'req_011CcLLe3qSBNw8HsAaHTo7C'
+  },
+  type: 'api_error'
+}
+    vary: 'Accept-Encoding',
+    'cf-cache-status': 'DYNAMIC',
+    'set-cookie': '_cfuvid=UVX_p6QVD3BUA_nhP6Y8jZ..Hj0S8DDUuBYZ9YddNcw-1782224453.2738605-1.0.1.1-eOywJ1ejV5bhmV.tklmd3G7zOwqpCFFYrXJqN2ng21Q; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.anthropic.com',
+Blueprint error: Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CcLLe9S2zaM1hbgAaTuP2"}
+  status: 500,
+    at async E (.next/server/chunks/[root-of-the-server]__0i812es._.js:15:42)
+  headers: Headers {
+    at async l (.next/server/chunks/[root-of-the-server]__0i812es._.js:45:4250)
+    date: 'Tue, 23 Jun 2026 14:20:53 GMT',
+    at async o (.next/server/chunks/[root-of-the-server]__0i812es._.js:45:5291) {
+    'content-type': 'application/json',
+    'transfer-encoding': 'chunked',
+    connection: 'keep-alive',
+    'x-should-retry': 'false',
+    'request-id': 'req_011CcLLe9S2zaM1hbgAaTuP2',

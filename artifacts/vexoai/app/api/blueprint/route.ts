@@ -68,12 +68,32 @@ Return ONLY this JSON, no other text:
 {"reply":"...","blueprint":{"title":"...","language":"en","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":8,"script":"...","visualPrompt":"..."}]}}`
 }
 
+/** Retry up to `maxAttempts` times on transient 5xx errors from Anthropic. */
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 2): Promise<T> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const isLast = attempt === maxAttempts - 1
+      const status = (err as Record<string, unknown>)?.status
+      if (!isLast && typeof status === "number" && status >= 500 && status < 600) {
+        await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)))
+        continue
+      }
+      throw err
+    }
+  }
+  /* istanbul ignore next */
+  throw new Error("unreachable")
+}
+
 export async function POST(req: NextRequest) {
+  let locale: "mn" | "en" = "mn"
   try {
     const body = await req.json()
     const {
       idea,
-      locale = "mn",
+      locale: bodyLocale = "mn",
       model = "standard",
       currentBlueprint,
     } = body as {
@@ -82,6 +102,7 @@ export async function POST(req: NextRequest) {
       model?: "standard" | "veo3"
       currentBlueprint?: VideoBlueprint
     }
+    locale = bodyLocale
 
     if (!idea || !idea.trim()) {
       return NextResponse.json({ error: "idea required" }, { status: 400 })
@@ -129,12 +150,14 @@ export async function POST(req: NextRequest) {
           : `Current plan (JSON):\n${JSON.stringify(slim)}\n\nUser's change request: `) + idea.trim()
     }
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 3000,
-      system: buildSystemPrompt(locale, safeModel),
-      messages: [{ role: "user", content: userContent }],
-    })
+    const message = await withRetry(() =>
+      anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 3000,
+        system: buildSystemPrompt(locale, safeModel),
+        messages: [{ role: "user", content: userContent }],
+      }),
+    )
 
     const text = message.content[0]?.type === "text" ? message.content[0].text : ""
     const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -167,6 +190,16 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error("Blueprint error:", error)
-    return NextResponse.json({ error: "Failed to build plan" }, { status: 500 })
+    const status = (error as Record<string, unknown>)?.status
+    const isAnthropicDown = typeof status === "number" && status >= 500 && status < 600
+    const message =
+      locale === "mn"
+        ? isAnthropicDown
+          ? "AI сервер түр зуур доголдоод байна. Хэдэн минутын дараа дахин оролдоно уу."
+          : "Төлөвлөгөө гаргахад алдаа гарлаа. Дахин оролдоно уу."
+        : isAnthropicDown
+          ? "AI service is temporarily unavailable. Please try again in a few minutes."
+          : "Failed to build plan. Please try again."
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

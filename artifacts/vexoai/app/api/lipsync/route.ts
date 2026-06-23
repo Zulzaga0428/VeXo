@@ -1,126 +1,109 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import { pendingLipsyncJobs, type LipsyncEngine } from "@/lib/lipsync-jobs"
 
 fal.config({ credentials: process.env.FAL_KEY })
 
-export const maxDuration = 180
+// Submit only — returns requestId immediately so the client can poll
+// /api/lipsync-status without holding this HTTP connection open for 1-3 min.
+// (Long synchronous fal.subscribe calls are killed by Railway's proxy timeout.)
+export const maxDuration = 30
 
-// Two lipsync engines available:
-//
-//  "natural"  — LatentSync (diffusion-based). Generates the mouth region from
-//               scratch in the latent space so there's no visible blend seam.
-//               Looks the most organic / least "AI" — recommended for close-up
-//               talking-head shots. Slightly slower (~30–60 s more).
-//
-//  "pro"      — Sync Labs lipsync-2-pro. Fast, phoneme-accurate, handles wide
-//               shots and motion well. Best when the face is small in frame.
-//
-// Default is "natural" so new users get the best result without having to pick.
-type LipsyncEngine = "natural" | "pro"
+function engineEndpoint(engine: LipsyncEngine): string {
+  return engine === "natural" ? "fal-ai/latentsync" : "fal-ai/sync-lipsync/v2"
+}
+
+function engineInput(engine: LipsyncEngine, videoUrl: string, audioUrl: string) {
+  if (engine === "natural") {
+    return {
+      video_url: videoUrl,
+      audio_url: audioUrl,
+      guidance_scale: 2.5,
+      inference_steps: 40,
+    }
+  }
+  return {
+    model: "lipsync-2-pro",
+    video_url: videoUrl,
+    audio_url: audioUrl,
+    sync_mode: "cut_off",
+  }
+}
 
 export async function POST(request: NextRequest) {
+  const body = (await request.json()) as {
+    videoUrl?: string
+    audioUrl?: string
+    engine?: LipsyncEngine
+  }
+  const { videoUrl, audioUrl, engine = "natural" } = body
+
+  if (!videoUrl || !audioUrl) {
+    return NextResponse.json({ error: "videoUrl and audioUrl are required" }, { status: 400 })
+  }
+
+  // Validate URLs before charging credits
+  for (const u of [videoUrl, audioUrl]) {
+    try {
+      const parsed = new URL(u)
+      if (parsed.protocol !== "https:") {
+        return NextResponse.json({ error: "Only https URLs allowed" }, { status: 400 })
+      }
+    } catch {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
+    }
+  }
+
   const charge = await chargeCredits(CREDIT_COST.lipsync)
   if (!charge.ok) {
     return NextResponse.json({ error: charge.error }, { status: charge.status })
   }
 
   try {
-    const { videoUrl, audioUrl, engine = "natural" } = await request.json() as {
-      videoUrl?: string
-      audioUrl?: string
-      engine?: LipsyncEngine
-    }
+    let requestId: string | undefined
+    let activeEngine: LipsyncEngine = engine
 
-    if (!videoUrl || !audioUrl) {
-      await refundCredits(charge.userId, CREDIT_COST.lipsync)
-      return NextResponse.json({ error: "videoUrl and audioUrl are required" }, { status: 400 })
-    }
-
-    for (const u of [videoUrl, audioUrl]) {
-      try {
-        const parsed = new URL(u)
-        if (parsed.protocol !== "https:") {
-          await refundCredits(charge.userId, CREDIT_COST.lipsync)
-          return NextResponse.json({ error: "Only https URLs allowed" }, { status: 400 })
-        }
-      } catch {
-        await refundCredits(charge.userId, CREDIT_COST.lipsync)
-        return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
-      }
-    }
-
-    let syncedUrl: string | undefined
-
-    if (engine === "natural") {
-      // ── LatentSync ────────────────────────────────────────────────────────
-      // Diffusion-based: synthesises the mouth region in latent space so there
-      // is no hard edge between the original face and the lip area. Produces
-      // the most natural, human-looking result especially on close-up shots.
-      try {
-        const result = await fal.subscribe("fal-ai/latentsync", {
-          input: {
-            video_url: videoUrl,
-            audio_url: audioUrl,
-            // guidance_scale controls how strictly the model follows the audio
-            // phonemes. 2.5 is the sweet spot — higher values over-animate.
-            guidance_scale: 2.5,
-            // inference_steps: more steps = smoother but slower. 40 is optimal.
-            inference_steps: 40,
-          } as never,
-          logs: false,
-        }) as { data?: { video?: { url?: string }; video_url?: string } }
-        syncedUrl = result.data?.video?.url || result.data?.video_url
-      } catch (e) {
-        // LatentSync can THROW on difficult angles / model errors — don't let
-        // that abort lip-sync entirely, fall through to lipsync-2-pro below.
+    try {
+      const ep = engineEndpoint(activeEngine)
+      const result = (await fal.queue.submit(ep, {
+        input: engineInput(activeEngine, videoUrl, audioUrl) as never,
+      })) as { request_id: string }
+      requestId = result.request_id
+    } catch (e) {
+      if (activeEngine === "natural") {
+        // LatentSync submit failed — try lipsync-2-pro immediately
         console.warn(
-          "[lipsync] LatentSync threw, falling back to lipsync-2-pro:",
+          "[lipsync] LatentSync submit failed, falling back to lipsync-2-pro:",
           e instanceof Error ? e.message : e,
         )
+        activeEngine = "pro"
+        const result = (await fal.queue.submit("fal-ai/sync-lipsync/v2", {
+          input: engineInput("pro", videoUrl, audioUrl) as never,
+        })) as { request_id: string }
+        requestId = result.request_id
+      } else {
+        throw e
       }
-
-      // LatentSync produced nothing (no url, or it threw) — fall back to pro.
-      if (!syncedUrl) {
-        console.warn("[lipsync] LatentSync returned no video, falling back to lipsync-2-pro")
-        const fallback = await fal.subscribe("fal-ai/sync-lipsync/v2", {
-          input: {
-            model: "lipsync-2-pro",
-            video_url: videoUrl,
-            audio_url: audioUrl,
-            sync_mode: "cut_off",
-          } as never,
-          logs: false,
-        }) as { data?: { video?: { url?: string }; video_url?: string } }
-        syncedUrl = fallback.data?.video?.url || fallback.data?.video_url
-      }
-    } else {
-      // ── Sync Labs lipsync-2-pro ───────────────────────────────────────────
-      // Phoneme-accurate, fast. Better for wide shots where the face is small.
-      const result = await fal.subscribe("fal-ai/sync-lipsync/v2", {
-        input: {
-          model: "lipsync-2-pro",
-          video_url: videoUrl,
-          audio_url: audioUrl,
-          sync_mode: "cut_off",
-        } as never,
-        logs: false,
-      }) as { data?: { video?: { url?: string }; video_url?: string } }
-
-      syncedUrl = result.data?.video?.url || result.data?.video_url
     }
 
-    if (!syncedUrl) {
-      await refundCredits(charge.userId, CREDIT_COST.lipsync)
-      return NextResponse.json({ error: "Lip-sync produced no video" }, { status: 502 })
-    }
+    if (!requestId) throw new Error("FAL queue submit returned no request_id")
 
-    return NextResponse.json({ videoUrl: syncedUrl, remaining: charge.remaining, engine })
+    // Register the job so /api/lipsync-status can look it up
+    pendingLipsyncJobs.set(requestId, {
+      videoUrl,
+      audioUrl,
+      userId: charge.userId,
+      engine: activeEngine,
+      model: engineEndpoint(activeEngine),
+    })
+
+    return NextResponse.json({ requestId, engine: activeEngine })
   } catch (error) {
     await refundCredits(charge.userId, CREDIT_COST.lipsync)
-    console.error("Lip-sync error:", error)
+    console.error("[lipsync] submit error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Lip-sync failed" },
+      { error: error instanceof Error ? error.message : "Lip-sync submit failed" },
       { status: 500 },
     )
   }

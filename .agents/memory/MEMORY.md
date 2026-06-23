@@ -1,2 +1,3 @@
 - [VexoAI audio/lipsync timing](vexoai-audio-sync.md) — "voice before lips" is a merge-path issue; per-scene delay = leading silence, padded server-side (WAV native), NaN-guard the offset; per-scene waveform timeline reuses keyed narration (voice|lang|text), dedupes TTS, re-derives freshness.
 - [SSRF guard for server-fetched client URLs](ssrf-fetch-guard.md) — validating the initial URL is NOT enough; `fetch` auto-follows redirects, so follow manually (`redirect:"manual"`) and re-guard every hop.
+- [VexoAI lipsync async architecture](vexoai-lipsync-async.md) — lipsync must use submit+poll (not fal.subscribe) to avoid Railway production HTTP timeout killing the 1-3 min sync request.

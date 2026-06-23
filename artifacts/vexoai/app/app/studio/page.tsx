@@ -544,15 +544,39 @@ export default function StudioPage() {
                       }
                     }
                     try {
+                      // Submit lipsync job — returns requestId immediately.
+                      // Using async submit+poll avoids holding the HTTP connection
+                      // open for 1-3 min, which production proxies (Railway etc.)
+                      // can kill before LatentSync finishes.
                       const lsRes = await fetch("/api/lipsync", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ videoUrl: rawVideo, audioUrl: lipAudio, engine: lipsyncEngine }),
                       })
-                      const lsData = await lsRes.json()
-                      if (lsRes.ok && lsData.videoUrl) {
-                        finalVideo = lsData.videoUrl
-                        synced = true
+                      const lsSubmit = await lsRes.json()
+                      if (lsRes.ok && lsSubmit.requestId) {
+                        let currentId = lsSubmit.requestId as string
+                        let currentEngine = lsSubmit.engine as string
+                        // Poll until done — max 60 × 3 s = 3 min
+                        for (let p = 0; p < 60; p++) {
+                          await new Promise<void>((r) => setTimeout(r, 3000))
+                          const stRes = await fetch(
+                            `/api/lipsync-status?requestId=${encodeURIComponent(currentId)}&engine=${encodeURIComponent(currentEngine)}`,
+                          )
+                          const stData = await stRes.json()
+                          if (stData.status === "done" && stData.videoUrl) {
+                            finalVideo = stData.videoUrl as string
+                            synced = true
+                            break
+                          }
+                          if (stData.status === "fallback" && stData.requestId) {
+                            currentId = stData.requestId as string
+                            currentEngine = (stData.engine ?? "pro") as string
+                            continue
+                          }
+                          if (stData.status === "failed") break
+                          // "processing" → continue polling
+                        }
                       }
                     } catch {
                       // ignore — fall through to plain merge

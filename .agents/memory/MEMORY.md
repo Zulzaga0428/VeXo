@@ -1,0 +1,1 @@
+- [VexoAI audio/lipsync timing](vexoai-audio-sync.md) — "voice before lips" is a merge-path issue; per-scene delay = leading silence, padded server-side (WAV native), NaN-guard the offset.

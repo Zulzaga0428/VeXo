@@ -19,11 +19,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { videoUrl, audioUrl } = await request.json()
+    const { videoUrl, audioUrl, audioStartOffset } = await request.json()
 
     if (!videoUrl || !audioUrl) {
       return NextResponse.json({ error: "videoUrl and audioUrl are required" }, { status: 400 })
     }
+
+    // How long the speaker stays silent before the voice begins. Defaults to
+    // 0.5s (mouth has time to open). Clamped to a sane 0–5s range; a NaN or
+    // non-finite value falls back to the default rather than breaking compose.
+    const rawOffset =
+      typeof audioStartOffset === "number" && Number.isFinite(audioStartOffset) ? audioStartOffset : 0.5
+    const startOffset = Math.min(5, Math.max(0, rawOffset))
 
     // Validate URLs are https.
     for (const u of [videoUrl, audioUrl]) {
@@ -48,9 +55,10 @@ export async function POST(request: NextRequest) {
           {
             id: "voice",
             type: "audio",
-            // 0.5s delay so the speaker's mouth has time to open before
-            // the voice starts — prevents the "audio playing before lips move" effect.
-            keyframes: [{ timestamp: 0.5, duration: 0, url: audioUrl }],
+            // Delay (seconds) so the speaker's mouth has time to open before the
+            // voice starts — prevents the "audio playing before lips move" effect.
+            // User-adjustable per scene via the audio-start slider.
+            keyframes: [{ timestamp: startOffset, duration: 0, url: audioUrl }],
           },
         ],
       },

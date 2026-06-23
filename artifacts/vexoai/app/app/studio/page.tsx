@@ -30,8 +30,14 @@ interface StudioScene {
   videoUrl?: string
   // Per-scene voice override. Falls back to the global voice when unset.
   voice?: VoiceSelection
+  // Seconds of silence before the narration starts, so the speaker's mouth has
+  // time to open before talking. Defaults to 0.5s when unset.
+  audioStartOffset?: number
   error?: string
 }
+
+// Default delay (seconds) before a scene's narration begins.
+const DEFAULT_AUDIO_OFFSET = 0.5
 
 interface ChatMessage {
   role: "user" | "agent"
@@ -260,6 +266,28 @@ export default function StudioPage() {
     })
   }
 
+  const setSceneOffset = (index: number, audioStartOffset: number) => {
+    setScenesSafe((prev) => {
+      const u =
+        prev.length > 0
+          ? [...prev]
+          : Array.from(
+              { length: sceneCount },
+              (): StudioScene => ({
+                summary: "",
+                narration: "",
+                status: "idle" as SceneStatus,
+                progress: 0,
+              }),
+            )
+      u[index] = {
+        ...(u[index] || { summary: "", narration: "", status: "idle", progress: 0 }),
+        audioStartOffset,
+      }
+      return u
+    })
+  }
+
   // Generate one scene end to end: video -> poll -> tts -> merge -> save.
   const produceScene = (index: number, scene: StudioScene) =>
     new Promise<void>(async (resolve) => {
@@ -372,16 +400,38 @@ export default function StudioPage() {
                 const ttsData = await ttsRes.json()
                 let finalVideo = rawVideo
                 if (ttsData.audioUrl) {
+                  // How long the speaker stays silent before talking (clamped to
+                  // the slider's 0–3s range).
+                  const offset = Math.min(3, Math.max(0, scene.audioStartOffset ?? DEFAULT_AUDIO_OFFSET))
                   let synced = false
                   // When lip-sync is on, drive the speaker's mouth from the
                   // narration. Falls back to a plain audio merge if it fails
                   // (e.g. product/landscape shots with no face to sync).
                   if (lipSync) {
+                    // Lip-sync animates the mouth from the audio, so to keep the
+                    // speaker quiet (mouth closed) for `offset`s, prepend that
+                    // much silence to the narration before syncing. Padding runs
+                    // server-side (no browser CORS limits) and falls back to the
+                    // original audio if it can't pad.
+                    let lipAudio = ttsData.audioUrl
+                    if (offset > 0) {
+                      try {
+                        const padRes = await fetch("/api/pad-audio", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ audioUrl: ttsData.audioUrl, seconds: offset }),
+                        })
+                        const padData = await padRes.json()
+                        if (padRes.ok && padData.url) lipAudio = padData.url
+                      } catch {
+                        // padding failed — sync the original audio (no delay)
+                      }
+                    }
                     try {
                       const lsRes = await fetch("/api/lipsync", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl, engine: lipsyncEngine }),
+                        body: JSON.stringify({ videoUrl: rawVideo, audioUrl: lipAudio, engine: lipsyncEngine }),
                       })
                       const lsData = await lsRes.json()
                       if (lsRes.ok && lsData.videoUrl) {
@@ -396,7 +446,7 @@ export default function StudioPage() {
                     const mRes = await fetch("/api/merge-audio", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl }),
+                      body: JSON.stringify({ videoUrl: rawVideo, audioUrl: ttsData.audioUrl, audioStartOffset: offset }),
                     })
                     const mData = await mRes.json()
                     if (mRes.ok && mData.videoUrl) finalVideo = mData.videoUrl
@@ -1457,6 +1507,41 @@ export default function StudioPage() {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Audio start delay — how long the speaker stays silent before talking */}
+                  <div className="mt-3 rounded-xl border border-border bg-background/50 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <Mic className="h-3.5 w-3.5" />
+                        {t("Хоолой эхлэх хугацаа", "Voice start delay")}
+                      </span>
+                      <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent">
+                        {(currentEdit?.audioStartOffset ?? DEFAULT_AUDIO_OFFSET).toFixed(1)}
+                        {t("с", "s")}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={3}
+                      step={0.1}
+                      value={currentEdit?.audioStartOffset ?? DEFAULT_AUDIO_OFFSET}
+                      onChange={(e) =>
+                        editingScene !== null && setSceneOffset(editingScene, Number(e.target.value))
+                      }
+                      className="w-full accent-accent"
+                    />
+                    <div className="mt-1 flex justify-between text-[10px] text-muted-foreground/60">
+                      <span>0{t("с", "s")}</span>
+                      <span>3{t("с", "s")}</span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-muted-foreground/60">
+                      {t(
+                        "Ам нээгдэхээс өмнө дуу гарахаас сэргийлж, яриаг хойшлуулна.",
+                        "Delays the voice so the mouth opens before talking starts.",
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>

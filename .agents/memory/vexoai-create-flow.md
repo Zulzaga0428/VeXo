@@ -141,3 +141,33 @@ scenes and double-charged the user.
 /`finalRef` across `run()` calls with the same key. Also freeze an
 `activeBlueprint` snapshot when a run starts and disable chat while
 `phase === "running"` so a revision can't swap the plan mid-generation.
+
+## Rule: run state is persisted server-side for refresh/closed-tab recovery
+The in-memory `producedRef`/`finalRef` cache is also mirrored to a per-user JSON
+blob in a PRIVATE Supabase Storage bucket (`vexoai-runs`, one file per user,
+upserted) so a refresh/closed tab can resume without losing or re-charging
+already-paid scenes. On mount the hook hydrates that snapshot and shows a
+`"paused"` phase (a recovered-but-unfinished run) with a Resume button; Resume
+re-runs the saved `activeBlueprint`, and the runKey match means only unstarted
+scenes regenerate.
+**Why storage, not a DB table:** this app's schema lives in the Supabase
+dashboard (no migrations in the repo), so a per-user JSON object via the admin
+storage client needs no DDL.
+**Persist the requestId, not just finished clips:** once a provider accepts a
+generation job it has already charged credits, so persist the returned requestId
+immediately and, on resume, re-poll that requestId instead of submitting a new
+job. Persisting only completed scene URLs loses any in-flight paid job on refresh.
+**Out-of-order writes must not regress state:** persistence fires many times in
+quick succession; concurrent fire-and-forget writes can land out of order and
+clobber a newer snapshot (dropping a saved requestId/url). Serialize client
+writes (single in-flight, coalesce to latest) AND stamp a strictly-monotonic
+`updatedAt` the server compare-and-sets against (reject older/equal).
+**SECURITY — must stay private:** run snapshots hold blueprint content + media
+URLs, so they MUST live in a private bucket (NOT the public media bucket, whose
+paths are guessable `{userId}/...`) and be read/written ONLY via the
+authenticated route + service-role admin client. Never expose a public URL.
+**Gotcha:** all vexoai `/api/*` routes are shadowed in the Replit preview proxy
+by the separate `api-server` artifact (paths `/api`), so they 502 through
+`localhost:80` — test at the app level (`localhost:3000`). A plain workflow
+restart can leave Turbopack serving a stale cache that 404s every `/api` route;
+`rm -rf .next` + restart fixes it.

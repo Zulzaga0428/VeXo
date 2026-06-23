@@ -1,20 +1,26 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   avatarStatus,
+  clearRun,
   generateAvatarVideo,
   generateTts,
   generateVideo,
+  loadRun,
   pollUntilDone,
+  saveRun,
   saveVideo,
   stitchVideo,
   videoStatus,
 } from "@/lib/create-api-client"
 import { sceneHasNarration, willStitch } from "@/lib/blueprint-costs"
 import type { SceneStatus, VideoBlueprint } from "@/lib/blueprint"
+import type { PersistedRun, PersistedScene, SceneJob } from "@/lib/create-run"
 
-export type GenPhase = "idle" | "running" | "done" | "error"
+// "paused" = a run was recovered from storage (refresh/closed tab) but not yet
+// resumed; already-paid work is kept and only the rest needs generating.
+export type GenPhase = "idle" | "running" | "paused" | "done" | "error"
 
 export interface SceneProgress {
   id: string
@@ -24,14 +30,8 @@ export interface SceneProgress {
   error?: string
 }
 
-interface SceneOutput {
-  videoUrl: string
-  // null = audio already baked into the clip (a_roll) or silent b_roll.
-  audioUrl: string | null
-}
-
 // Identity of a run — if the editable content changes between runs we throw away
-// cached scene outputs; if it's identical (a retry) we keep them so already-paid
+// cached scene work; if it's identical (a retry/resume) we keep it so already-paid
 // scenes are never regenerated/recharged.
 function runKeyOf(bp: VideoBlueprint): string {
   return JSON.stringify({
@@ -50,18 +50,24 @@ function runKeyOf(bp: VideoBlueprint): string {
   })
 }
 
+function emptyScene(id: string): PersistedScene {
+  return { id, ttsAudioUrl: null, job: null, videoUrl: null }
+}
+
 /**
  * Runs the approved blueprint through the (existing, server-charged) pipeline:
  *   a_roll -> tts -> avatar-video -> poll          (audio baked in by Kling)
  *   b_roll -> [tts] + generate-video -> poll       (silent footage + optional VO)
  *   then -> stitch (lipSync:false) -> save-video
  *
- * Resumable: successful scene outputs and the stitched final are cached per run
- * key, so "Retry" after a partial failure only redoes the failed/unstarted work
- * — it never recharges scenes that already succeeded.
+ * Resumable across reloads: per-scene state (generated TTS audio, the accepted
+ * job's requestId, and the finished clip) plus the stitched final are persisted
+ * per run key. A refresh/closed tab can resume — already-rendered scenes are
+ * skipped, an in-flight job is re-polled by its requestId (not re-submitted), and
+ * only truly-unstarted work is generated. Nothing already paid for is recharged.
  */
-export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
-  const { locale } = opts
+export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolean }) {
+  const { locale, recover = true } = opts
   const [phase, setPhase] = useState<GenPhase>("idle")
   const [scenes, setScenes] = useState<SceneProgress[]>([])
   const [finalUrl, setFinalUrl] = useState<string | null>(null)
@@ -71,9 +77,19 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
   const [activeBlueprint, setActiveBlueprint] = useState<VideoBlueprint | null>(null)
 
   const cancelRef = useRef(false)
-  const producedRef = useRef<Map<string, SceneOutput>>(new Map())
+  // Per-scene state, keyed by scene id. The source of truth for resume.
+  const sceneStateRef = useRef<Map<string, PersistedScene>>(new Map())
   const finalRef = useRef<{ key: string; url: string } | null>(null)
   const runKeyRef = useRef<string>("")
+
+  // Serialized persistence: persist() is called many times in quick succession,
+  // so rather than firing concurrent (and potentially out-of-order) writes we
+  // keep only the latest pending snapshot and flush it with a single in-flight
+  // request at a time. Combined with a strictly-monotonic updatedAt and the
+  // server's compare-and-set guard, a stale write can never clobber newer state.
+  const pendingRunRef = useRef<PersistedRun | null>(null)
+  const writingRef = useRef(false)
+  const lastTsRef = useRef(0)
 
   const t = useCallback((mn: string, en: string) => (locale === "mn" ? mn : en), [locale])
 
@@ -81,12 +97,83 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
     setScenes((prev) => prev.map((s) => (s.id === id ? { ...s, ...p } : s)))
   }, [])
 
+  const flushWrites = useCallback(async () => {
+    if (writingRef.current) return
+    writingRef.current = true
+    try {
+      while (pendingRunRef.current) {
+        const snap = pendingRunRef.current
+        pendingRunRef.current = null
+        await saveRun(snap).catch(() => {})
+      }
+    } finally {
+      writingRef.current = false
+    }
+  }, [])
+
+  // Persist the current run snapshot (best-effort) so a refresh/closed tab can
+  // recover already-paid work and the final. Coalesces to the latest snapshot and
+  // serializes the actual writes via flushWrites.
+  const persist = useCallback(
+    (bp: VideoBlueprint, key: string, done: boolean) => {
+      // Strictly-monotonic timestamp so ordering is well-defined even within the
+      // same millisecond.
+      const ts = Math.max(Date.now(), lastTsRef.current + 1)
+      lastTsRef.current = ts
+      pendingRunRef.current = {
+        runKey: key,
+        blueprint: bp,
+        scenes: bp.scenes.map((s) => sceneStateRef.current.get(s.id) ?? emptyScene(s.id)),
+        finalUrl: finalRef.current?.key === key ? finalRef.current.url : null,
+        done,
+        updatedAt: ts,
+      }
+      void flushWrites()
+    },
+    [flushWrites],
+  )
+
+  // On mount, try to recover an unfinished (or just-completed) run for this user.
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (!recover || hydratedRef.current) return
+    hydratedRef.current = true
+    let cancelled = false
+    void (async () => {
+      const res = await loadRun()
+      if (cancelled || !res.ok || !res.data.run) return
+      const saved = res.data.run
+      sceneStateRef.current = new Map(saved.scenes.map((s) => [s.id, s]))
+      runKeyRef.current = saved.runKey
+      finalRef.current = saved.finalUrl ? { key: saved.runKey, url: saved.finalUrl } : null
+      setActiveBlueprint(saved.blueprint)
+      setScenes(
+        saved.blueprint.scenes.map((s) => {
+          const st = sceneStateRef.current.get(s.id)
+          return st?.videoUrl
+            ? { id: s.id, status: "done" as const, progress: 100, videoUrl: st.videoUrl }
+            : { id: s.id, status: "idle" as const, progress: 0 }
+        }),
+      )
+      if (saved.done && saved.finalUrl) {
+        setFinalUrl(saved.finalUrl)
+        setPhase("done")
+      } else {
+        // Recovered but unfinished — wait for the user to resume.
+        setPhase("paused")
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [recover])
+
   const run = useCallback(
     async (bp: VideoBlueprint) => {
       const key = runKeyOf(bp)
       if (key !== runKeyRef.current) {
-        // Plan changed since the last run -> discard cached outputs.
-        producedRef.current = new Map()
+        // Plan changed since the last run -> discard cached work.
+        sceneStateRef.current = new Map()
         finalRef.current = null
         runKeyRef.current = key
       }
@@ -97,14 +184,23 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
       setFinalUrl(null)
       setScenes(
         bp.scenes.map((s) => {
-          const cached = producedRef.current.get(s.id)
-          return cached
-            ? { id: s.id, status: "done" as const, progress: 100, videoUrl: cached.videoUrl }
+          const st = sceneStateRef.current.get(s.id)
+          return st?.videoUrl
+            ? { id: s.id, status: "done" as const, progress: 100, videoUrl: st.videoUrl }
             : { id: s.id, status: "idle" as const, progress: 0 }
         }),
       )
+      // Persist the snapshot up-front so the plan is recoverable even if the
+      // first step is still in flight when the tab closes.
+      persist(bp, key, false)
 
-      const produced: SceneOutput[] = []
+      // Read/update per-scene state, persisting after every meaningful change so
+      // an accepted (already-paid) job survives a reload.
+      const getState = (id: string): PersistedScene => sceneStateRef.current.get(id) ?? emptyScene(id)
+      const setState = (st: PersistedScene) => {
+        sceneStateRef.current.set(st.id, st)
+        persist(bp, key, false)
+      }
 
       const fail = (id: string, msg: string) => {
         patch(id, { status: "failed", error: msg })
@@ -115,78 +211,109 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
       for (const scene of bp.scenes) {
         if (cancelRef.current) return
 
-        // Reuse already-paid output on retry.
-        const cached = producedRef.current.get(scene.id)
-        if (cached) {
-          produced.push(cached)
-          continue
-        }
+        let st = getState(scene.id)
+        if (st.videoUrl) continue // already rendered — skip (and don't recharge)
 
         try {
           if (scene.type === "a_roll") {
             if (!bp.avatar.imageUrl) throw new Error(t("Аватар зураг оруулаагүй байна", "No avatar image set"))
             if (!sceneHasNarration(scene)) throw new Error(t("Яриа хоосон байна", "Script is empty"))
 
-            patch(scene.id, { status: "tts", progress: 8 })
-            const tts = await generateTts(scene.script, bp.voice.voiceId, bp.voice.lang)
-            if (!tts.ok) throw new Error(tts.error)
+            // 1. TTS — skip if already generated or a job is already in flight.
+            if (!st.ttsAudioUrl && !st.job) {
+              patch(scene.id, { status: "tts", progress: 8 })
+              const tts = await generateTts(scene.script, bp.voice.voiceId, bp.voice.lang)
+              if (!tts.ok) throw new Error(tts.error)
+              st = { ...st, ttsAudioUrl: tts.data.audioUrl }
+              setState(st)
+            }
             if (cancelRef.current) return
 
-            patch(scene.id, { status: "video", progress: 30 })
-            const av = await generateAvatarVideo({
-              imageUrl: bp.avatar.imageUrl,
-              audioUrl: tts.data.audioUrl,
-              prompt: scene.visualPrompt || undefined,
-            })
-            if (!av.ok) throw new Error(av.error)
+            // 2. Submit the avatar job — skip if one was already accepted.
+            let job: SceneJob
+            if (st.job) {
+              job = st.job
+            } else {
+              patch(scene.id, { status: "video", progress: 30 })
+              const av = await generateAvatarVideo({
+                imageUrl: bp.avatar.imageUrl,
+                audioUrl: st.ttsAudioUrl!,
+                prompt: scene.visualPrompt || undefined,
+              })
+              if (!av.ok) throw new Error(av.error)
+              job = { kind: "avatar", requestId: av.data.requestId }
+              st = { ...st, job }
+              setState(st)
+            }
             if (cancelRef.current) return
 
+            // 3. Poll the (possibly pre-existing) job.
             patch(scene.id, { status: "polling", progress: 45 })
-            const done = await pollUntilDone(() => avatarStatus(av.data.requestId), {
+            const done = await pollUntilDone(() => avatarStatus(job.requestId), {
               onProgress: (p) => patch(scene.id, { progress: Math.min(95, Math.max(45, p)) }),
             })
-            if (!done.ok) throw new Error(done.error)
-
-            const out: SceneOutput = { videoUrl: done.videoUrl, audioUrl: null }
-            producedRef.current.set(scene.id, out)
+            if (!done.ok) {
+              // Drop the dead job so an explicit retry can re-submit.
+              st = { ...st, job: null }
+              setState(st)
+              throw new Error(done.error)
+            }
+            st = { ...st, videoUrl: done.videoUrl, job: null }
+            setState(st)
             patch(scene.id, { status: "done", progress: 100, videoUrl: done.videoUrl })
-            produced.push(out)
           } else {
             // b_roll — needs at least a visual prompt or a script to drive it.
             const prompt = scene.visualPrompt.trim() || scene.script.trim()
             if (!prompt) throw new Error(t("Дүрслэл хоосон байна", "Visual prompt is empty"))
 
-            let audioUrl: string | null = null
-            if (sceneHasNarration(scene)) {
+            // 1. Optional narration TTS — skip if already generated or a job is
+            //    in flight (audio is kept for stitch even after the job submits).
+            if (sceneHasNarration(scene) && !st.ttsAudioUrl && !st.job) {
               patch(scene.id, { status: "tts", progress: 8 })
               const tts = await generateTts(scene.script, bp.voice.voiceId, bp.voice.lang)
               if (!tts.ok) throw new Error(tts.error)
-              audioUrl = tts.data.audioUrl
+              st = { ...st, ttsAudioUrl: tts.data.audioUrl }
+              setState(st)
             }
             if (cancelRef.current) return
 
-            patch(scene.id, { status: "video", progress: 30 })
-            const gv = await generateVideo({
-              mode: "text",
-              prompt,
-              duration: scene.durationSec,
-              aspectRatio: bp.orientation,
-              model: bp.model,
-              generateAudio: false,
-            })
-            if (!gv.ok) throw new Error(gv.error)
+            // 2. Submit the video job — skip if one was already accepted.
+            let job: SceneJob
+            if (st.job) {
+              job = st.job
+            } else {
+              patch(scene.id, { status: "video", progress: 30 })
+              const gv = await generateVideo({
+                mode: "text",
+                prompt,
+                duration: scene.durationSec,
+                aspectRatio: bp.orientation,
+                model: bp.model,
+                generateAudio: false,
+              })
+              if (!gv.ok) throw new Error(gv.error)
+              job = { kind: "video", requestId: gv.data.requestId, model: bp.model, mode: "text" }
+              st = { ...st, job }
+              setState(st)
+            }
             if (cancelRef.current) return
 
+            // 3. Poll the (possibly pre-existing) job.
             patch(scene.id, { status: "polling", progress: 45 })
-            const done = await pollUntilDone(() => videoStatus(gv.data.requestId, bp.model, "text"), {
-              onProgress: (p) => patch(scene.id, { progress: Math.min(95, Math.max(45, p)) }),
-            })
-            if (!done.ok) throw new Error(done.error)
-
-            const out: SceneOutput = { videoUrl: done.videoUrl, audioUrl }
-            producedRef.current.set(scene.id, out)
+            const done = await pollUntilDone(
+              () => videoStatus(job.requestId, job.model ?? bp.model, job.mode ?? "text"),
+              {
+                onProgress: (p) => patch(scene.id, { progress: Math.min(95, Math.max(45, p)) }),
+              },
+            )
+            if (!done.ok) {
+              st = { ...st, job: null }
+              setState(st)
+              throw new Error(done.error)
+            }
+            st = { ...st, videoUrl: done.videoUrl, job: null }
+            setState(st)
             patch(scene.id, { status: "done", progress: 100, videoUrl: done.videoUrl })
-            produced.push(out)
           }
         } catch (e) {
           fail(scene.id, e instanceof Error ? e.message : t("Алдаа гарлаа", "Something went wrong"))
@@ -195,7 +322,17 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
       }
 
       if (cancelRef.current) return
-      if (produced.length === 0) {
+
+      // Build the ordered clip list for stitch. a_roll has audio baked in (null
+      // so stitch doesn't re-overlay); b_roll carries its own narration url.
+      const produced = bp.scenes.map((s) => {
+        const st = getState(s.id)
+        return {
+          videoUrl: st.videoUrl as string,
+          audioUrl: s.type === "a_roll" ? null : st.ttsAudioUrl,
+        }
+      })
+      if (produced.some((p) => !p.videoUrl)) {
         setError(t("Видео үүсээгүй", "No video produced"))
         setPhase("error")
         return
@@ -237,10 +374,13 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
         // ignore
       }
 
+      // Persist the finished run so a later refresh restores the result.
+      persist(bp, key, true)
+
       setFinalUrl(final)
       setPhase("done")
     },
-    [patch, t],
+    [patch, persist, t],
   )
 
   const cancel = useCallback(() => {
@@ -250,14 +390,18 @@ export function useVideoGeneration(opts: { locale: "mn" | "en" }) {
 
   const reset = useCallback(() => {
     cancelRef.current = true
-    producedRef.current = new Map()
+    sceneStateRef.current = new Map()
     finalRef.current = null
     runKeyRef.current = ""
+    // Drop any queued snapshot so it can't recreate the run after we clear it.
+    pendingRunRef.current = null
     setActiveBlueprint(null)
     setPhase("idle")
     setScenes([])
     setFinalUrl(null)
     setError(null)
+    // Discard any recoverable run on the server too.
+    void clearRun()
   }, [])
 
   return { phase, scenes, finalUrl, error, activeBlueprint, run, cancel, reset }

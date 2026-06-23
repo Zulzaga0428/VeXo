@@ -34,8 +34,19 @@ export function CreatePageClient() {
     setView("plan")
   }, [])
 
+  // Skip run recovery when arriving with a fresh idea from the dashboard — that's
+  // an explicit new creation, not a return to an in-progress run.
+  const ideaParam = searchParams.get("idea")
+  const recover = !(ideaParam && ideaParam.trim())
+
   const chat = useBlueprintChat({ locale, getBlueprint, onBlueprint })
-  const gen = useVideoGeneration({ locale })
+  const gen = useVideoGeneration({ locale, recover })
+
+  // When a run is recovered after a refresh, restore the editable plan so the
+  // editor/artifacts panels are coherent and Resume can re-run the snapshot.
+  useEffect(() => {
+    if (!blueprint && gen.activeBlueprint) setBlueprint(gen.activeBlueprint)
+  }, [blueprint, gen.activeBlueprint])
 
   // Move to the generation view as soon as a run starts/finishes.
   useEffect(() => {
@@ -43,7 +54,9 @@ export function CreatePageClient() {
   }, [gen.phase])
 
   const handleGenerate = useCallback(() => {
-    if (blueprint) gen.run(blueprint)
+    // Prefer the live plan; fall back to the recovered snapshot when resuming.
+    const bp = blueprint ?? gen.activeBlueprint
+    if (bp) gen.run(bp)
   }, [blueprint, gen])
 
   // While a run is in flight the chat is frozen so a revision can't swap the

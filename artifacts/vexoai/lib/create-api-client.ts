@@ -4,6 +4,7 @@
 // daily chat limit, etc.) instead of a generic failure.
 
 import type { BlueprintModel, RawBlueprint, VideoBlueprint } from "@/lib/blueprint"
+import type { PersistedRun } from "@/lib/create-run"
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string }
 
@@ -130,6 +131,21 @@ export function saveVideo(input: {
   sceneIndex?: number
 }) {
   return postJson<{ video: unknown; pathname: string }>("/api/save-video", input)
+}
+
+// ── Run recovery (resume after refresh / closed tab) ──────────────────────────
+export function loadRun() {
+  return getJson<{ run: PersistedRun | null }>("/api/create-run")
+}
+export function saveRun(run: PersistedRun) {
+  return postJson<{ ok: true }>("/api/create-run", { run })
+}
+export async function clearRun(): Promise<void> {
+  try {
+    await fetch("/api/create-run", { method: "DELETE" })
+  } catch {
+    // best-effort
+  }
 }
 
 // ── AI avatar / image generation ──────────────────────────────────────────────

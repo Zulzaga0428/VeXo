@@ -56,6 +56,11 @@ export function GenerationTimeline({
         <p className="text-xs text-muted-foreground">
           {phase === "running" && t("Видеог бүтээж байна. Хаалгахгүй байна уу.", "Building your video. Keep this open.")}
           {phase === "error" && t("Зарим дүр амжилтгүй боллоо.", "Some scenes failed.")}
+          {phase === "paused" &&
+            t(
+              "Дуусаагүй видео сэргээгдлээ. Үлдсэн дүрсийг үргэлжлүүлээрэй.",
+              "Unfinished video recovered. Resume to finish the remaining scenes.",
+            )}
         </p>
       </div>
 
@@ -111,7 +116,7 @@ export function GenerationTimeline({
         })}
       </div>
 
-      {phase === "error" && (
+      {(phase === "error" || phase === "paused") && (
         <div className="mt-4 space-y-2">
           {error && <p className="text-center text-xs text-destructive">{error}</p>}
           <div className="flex gap-2">
@@ -126,7 +131,7 @@ export function GenerationTimeline({
               className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
             >
               <RotateCcw className="h-4 w-4" />
-              {t("Дахин оролдох", "Retry")}
+              {phase === "paused" ? t("Үргэлжлүүлэх", "Resume") : t("Дахин оролдох", "Retry")}
             </button>
           </div>
         </div>

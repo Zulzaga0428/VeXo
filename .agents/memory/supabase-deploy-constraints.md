@@ -19,3 +19,9 @@ fail at runtime until the SQL is pasted into Supabase.
 commit message and to the user as a required manual step, and prefer designs
 that **fail loudly** (logged error, no silent fallback) when the object is
 missing, so a forgotten migration is visible rather than silently wrong.
+
+**Pending manual SQL:** `supabase/migrations/0001_generation_charges.sql`
+defines `transfer_generation_charge` (atomic natural→pro charge hand-off used by
+both video/avatar and lip-sync via `transferCharge`). Must be pasted into the
+Supabase SQL Editor or the lip-sync fallback transfer logs an error and falls
+through to refunding the original charge.

@@ -176,8 +176,9 @@ export function CreatePageClient() {
             messages={chat.messages}
             thinking={chat.thinking}
             hasBlueprint={!!blueprint}
-            onSubmit={chat.submit}
-            onAnswerClarify={chat.answerClarify}
+            onSubmit={handleSubmit}
+            onAnswerClarify={handleAnswerClarify}
+            disabled={chatDisabled}
           />
         </div>
       </div>

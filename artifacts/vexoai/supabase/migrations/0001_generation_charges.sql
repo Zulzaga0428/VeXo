@@ -24,12 +24,23 @@ create table if not exists public.generation_charges (
   user_id     uuid not null,
   cost        integer not null check (cost >= 0),
   kind        text not null default 'video',   -- 'video' | 'avatar'
+  model       text,                            -- b_roll only: 'standard' | 'veo3'
+  mode        text,                            -- b_roll only: 'image' | 'text'
   status      text not null default 'pending', -- 'pending' | 'settled' | 'refunded'
   created_at  timestamptz not null default now(),
   resolved_at timestamptz
 );
 
 alter table public.generation_charges enable row level security;
+
+-- Backfill columns + index for projects that created this table before the
+-- server-side reconciliation sweep existed. Safe to re-run. model/mode let the
+-- sweep re-check a b_roll job against the correct FAL endpoint; the index speeds
+-- up the "stale pending" scan.
+alter table public.generation_charges add column if not exists model text;
+alter table public.generation_charges add column if not exists mode  text;
+create index if not exists generation_charges_status_created_idx
+  on public.generation_charges (status, created_at);
 
 -- Atomically refund a still-pending charge exactly once and credit the user
 -- back. Returns the number of credits refunded (0 if nothing was pending —
@@ -64,18 +75,25 @@ end;
 $$;
 
 -- Mark a charge settled once its job has succeeded, so a later (spurious)
--- failure poll can never refund it. Idempotent.
-create or replace function public.settle_generation_charge(p_request_id text)
-returns void
+-- failure poll can never refund it. Idempotent. Returns the number of rows it
+-- actually settled (0 if already resolved) so callers can report truthfully.
+-- (DROP first: a CREATE OR REPLACE cannot change a function's return type.)
+drop function if exists public.settle_generation_charge(text);
+create function public.settle_generation_charge(p_request_id text)
+returns integer
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_count integer;
 begin
   update public.generation_charges
      set status = 'settled', resolved_at = now()
    where request_id = p_request_id
      and status = 'pending';
+  get diagnostics v_count = row_count;
+  return coalesce(v_count, 0);
 end;
 $$;
 

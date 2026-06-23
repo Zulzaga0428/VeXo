@@ -58,10 +58,32 @@ client polls — the status routes previously had no way to refund.
 **Manual step (no migrations folder):** the table + RPCs live in
 `artifacts/vexoai/supabase/migrations/0001_generation_charges.sql` and MUST be
 run once in Supabase (SQL Editor), same as `profiles`/`deduct_credits` were.
-Until then async failures simply aren't refunded (no crash).
-**Known gap:** refunds only fire while the client is polling. If the user closes
-the tab before the terminal poll, the charge stays `pending` and is never
-refunded — needs a server-side reconciliation sweep (proposed follow-up).
+The whole file is idempotent (create-if-not-exists, add-column-if-not-exists,
+or/replace + drop-before-create for the one return-type change) so it is safe to
+RE-RUN whenever the file changes — and you must, since there is no migration
+infra and no direct DB connection from this environment. Until applied, async
+failures simply aren't refunded (no crash).
+
+## Rule: two paths resolve a pending charge (poll + server sweep)
+**Why:** poll-based refund only fires while the client is polling; if the user
+closes the tab before the terminal poll, the charge would stay `pending`
+forever. A server-side sweep closes that gap so refunds are truly automatic.
+**How to apply:**
+- `reconcilePendingCharges()` (`lib/reconcile-charges.ts`) scans `pending`
+  rows older than N minutes, re-checks each against FAL (avatar→fixed endpoint;
+  b_roll needs `model`+`mode`, now persisted on the charge row via
+  `recordCharge(..., {model, mode})`), then `refundCharge`/`settleCharge`. It
+  only acts on DEFINITIVE FAL signals — transient errors surface as
+  `"processing"` and are left pending, so the sweep never speculatively refunds
+  a job that actually succeeded or is still running.
+- Triggered by `app/api/cron/reconcile-charges` (GET+POST), authorized by
+  `CRON_SECRET` (Bearer or `?key=`) OR an admin cookie session. **Operational:**
+  for true background sweeps the user must set `CRON_SECRET` and point a
+  Railway/cron scheduler at the route (agent can't set secrets or schedule
+  Railway). Without it, only the admin manual trigger works.
+- Summary counts only increment on actual RPC effect (`refunded` when credits>0,
+  `settled` when rows>0); rows a concurrent poll already resolved fall into
+  `alreadyResolved`, so the ops summary stays truthful.
 
 ## Rule: client generation must be resumable (no double-charge on retry)
 The browser orchestrator

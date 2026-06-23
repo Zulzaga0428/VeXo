@@ -69,9 +69,13 @@ export async function POST(request: NextRequest) {
       throw e
     }
 
-    // Record the charge keyed by requestId so /api/video-status can refund it
-    // if the async job later fails or times out.
-    await recordCharge(result.requestId, charge.userId, cost, "video")
+    // Record the charge keyed by requestId so /api/video-status (or the
+    // reconciliation sweep) can refund it if the async job later fails or times
+    // out. model/mode let the sweep re-check the right FAL endpoint.
+    await recordCharge(result.requestId, charge.userId, cost, "video", {
+      model: result.model,
+      mode: result.mode,
+    })
 
     return NextResponse.json({
       requestId: result.requestId,

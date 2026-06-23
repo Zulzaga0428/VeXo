@@ -77,17 +77,34 @@ export type ChargeKind = "video" | "avatar"
 // never breaks the request/poll path.
 
 // Record a charge against an async job's requestId so it can be refunded later.
+// `meta.model`/`meta.mode` (b_roll only) let the reconciliation sweep re-check
+// the job on the correct FAL endpoint when the user stopped polling.
 export async function recordCharge(
   requestId: string,
   userId: string,
   cost: number,
   kind: ChargeKind,
+  meta?: { model?: string; mode?: string },
 ) {
   try {
     const admin = createAdminClient()
-    const { error } = await admin
-      .from("generation_charges")
-      .insert({ request_id: requestId, user_id: userId, cost, kind })
+    const row: Record<string, unknown> = {
+      request_id: requestId,
+      user_id: userId,
+      cost,
+      kind,
+    }
+    if (meta?.model) row.model = meta.model
+    if (meta?.mode) row.mode = meta.mode
+
+    let { error } = await admin.from("generation_charges").insert(row)
+    // Tolerate a DB still on the pre-reconciliation schema (no model/mode
+    // columns) — retry without them so the charge is still recorded/refundable.
+    if (error && (row.model || row.mode) && /column/i.test(error.message)) {
+      delete row.model
+      delete row.mode
+      ;({ error } = await admin.from("generation_charges").insert(row))
+    }
     if (error) console.error("[credits] recordCharge failed:", error.message)
   } catch (e) {
     console.error("[credits] recordCharge error:", e)
@@ -114,14 +131,22 @@ export async function refundCharge(requestId: string): Promise<number> {
 }
 
 // Mark a charge settled once its job succeeds so it can never be refunded later.
-export async function settleCharge(requestId: string) {
+// Returns the number of rows actually settled (0 if already resolved). Note: a
+// DB still on the pre-reconciliation schema returns void -> data is null -> 0,
+// which is harmless (the update still runs; only the count is under-reported).
+export async function settleCharge(requestId: string): Promise<number> {
   try {
     const admin = createAdminClient()
-    const { error } = await admin.rpc("settle_generation_charge", {
+    const { data, error } = await admin.rpc("settle_generation_charge", {
       p_request_id: requestId,
     })
-    if (error) console.error("[credits] settleCharge rpc error:", error.message)
+    if (error) {
+      console.error("[credits] settleCharge rpc error:", error.message)
+      return 0
+    }
+    return (data as number) ?? 0
   } catch (e) {
     console.error("[credits] settleCharge error:", e)
+    return 0
   }
 }

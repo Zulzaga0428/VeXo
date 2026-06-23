@@ -94,9 +94,9 @@ export function DashboardHome({
   const go = (prompt: string) => {
     const q = prompt.trim()
     if (q) {
-      router.push(`/app/studio?idea=${encodeURIComponent(q)}`)
+      router.push(`/app/create?idea=${encodeURIComponent(q)}`)
     } else {
-      router.push("/app/studio")
+      router.push("/app/create")
     }
   }
 

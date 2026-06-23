@@ -1,16 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 
-// Cost per action in credits (tune later)
-export const CREDIT_COST = {
-  video_standard: 10, // Kling 3.0 (native audio)
-  video_veo3: 40,
-  image: 2,
-  tts: 1,
-  enhance: 1,
-  stitch: 3,
-  lipsync: 6, // per scene that gets lip-synced (lipsync-2-pro, highest quality)
-  autoscene: 1, // agent reads an image and writes the scene prompt + narration
-} as const
+// Cost per action in credits — single source of truth lives in the client-safe
+// module so the UI estimate and the server charge can never drift apart.
+export { CREDIT_COST } from "@/lib/credit-costs"
 
 type Result =
   | { ok: true; userId: string; remaining: number }

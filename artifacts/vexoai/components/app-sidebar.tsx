@@ -46,7 +46,7 @@ type MenuItem = {
 
 const createSection: MenuItem[] = [
   { id: "dashboard", href: "/app/dashboard", icon: LayoutGrid, labelMn: "Нүүр", labelEn: "Dashboard" },
-  { id: "studio", href: "/app/studio", icon: Clapperboard, labelMn: "Видео үүсгэх", labelEn: "Create Video" },
+  { id: "studio", href: "/app/create", icon: Clapperboard, labelMn: "Видео үүсгэх", labelEn: "Create Video" },
   { id: "images", href: "/app/editor", icon: ImageIcon, labelMn: "Зураг үүсгэх", labelEn: "Generate Image" },
   { id: "subtitles", href: "/app/subtitle", icon: Subtitles, labelMn: "Subtitle үүсгэх", labelEn: "Subtitles" },
 ]

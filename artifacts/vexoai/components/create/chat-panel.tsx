@@ -52,7 +52,7 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col bg-card">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+      <div className="flex h-12 items-center gap-2 border-b border-border px-4">
         <span className="text-sm font-medium">{t("Найруулагч", "Director")}</span>
         {onNewVideo && (
           <button

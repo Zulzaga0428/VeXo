@@ -1,0 +1,18 @@
+Найзаа, логийг харлаа. Энд хэдэн өөр зүйл болж байгааг ялгаж тайлбарлая.
+Эхлээд сайн мэдээ: дээд талд байгаа хамгийн сүүлийн deploy (output: standalone-ийг устгасан commit) "Deployment successful" болж, апп одоо Online байна. Тэгэхээр deploy өөрөө амжилттай болсон. Гэхдээ логид гурван өөр асуудал гарч байна:
+1. Серверийн restart loop (хамгийн ноцтой нь байсан)
+ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL ... Command failed with signal "SIGTERM" гэж гарсан. Энэ нь next start процесс SIGTERM авч унтарсан гэсэн үг — ихэвчлэн Railway аппыг healthcheck/PORT таарахгүй болохоор, эсвэл доорх crash-ийн улмаас дахин дахин асааж унтрааж байсан. output: standalone-ийг устгасан commit яг үүнийг засахаар хийгдсэн байгаа бөгөөд одоо Online болсон тул энэ нь шийдэгдсэн бололтой.
+2. [pad-audio] алдаа (ERR_OUT_OF_RANGE)
+RangeError: The value of "value" is out of range. It must be >= 0 and <= 4294967295. Received 4_295_015_295
+Энэ бол кодын алдаа. Аудио "pad" хийх функц нь Node-ийн зөвшөөрөгдөх дээд хязгаар (≈4.29 тэрбум, өөрөөр хэлбэл uint32 max) -аас давсан утга бичихийг оролдсон. Энэ нь сөрөг тоо (жишээ нь -281999 шиг) эсвэл хэт том буфер размер тооцоолохдоо overflow болсон байх магадлалтай. Pad-audio логик дэх buffer.writeUInt32 / sample count тооцооллыг шалгаж, утга 0–4294967295 хооронд байгаа эсэхийг clamp/validate хийх хэрэгтэй.
+3. [lipsync-status] 422 ValidationError (давтагдсаар байгаа)
+Error [ValidationError]: Unprocessable Entity — status: 422
+body: { detail: [ [Object] ] }
+Энэ нь хамгийн их давтагдаж байгаа алдаа — 4 секунд тутамд дахин дахин гарч, бүгд яг нэг requestId-той (019ef285-...). Энэ нь нэг lipsync даалгаврын статусыг polling хийхэд гадны API (lipsync үйлчилгээ) 422 Unprocessable Entity буцааж байна гэсэн үг. Илгээж буй өгөгдөл (payload) тухайн API-ийн schema-д таарахгүй байгаа учраас. Жинхэнэ шалтгааныг олохын тулд body.detail доторх [Object]-ийн агуулгыг харах хэрэгтэй — одоо лог дотор [Object] гэж нуугдсан байна.
+Дараагийн алхамууд:
+
+lipsync-status алдааны бодит шалтгааныг олохын тулд кодоо console.error(JSON.stringify(err.body.detail)) болгож detail-г бүтнээр нь логлох.
+Нэг requestId дээр 422 авсаар байвал тэр даалгаврыг дахин polling хийхээ зогсоох (retry/backoff эсвэл fail болгох) логик нэмэх — одоо хязгааргүй давтагдаж байна.
+pad-audio дахь uint32 overflow-г засах.
+
+Хүсвэл аль нэг алдааг (жишээ нь 422-ийн detail агуулгыг харахаар) гүнзгийрүүлж шалгаж өгье. Эсвэл Build Logs руу орж build үе шатанд алдаа байсан эсэхийг шалгах уу?

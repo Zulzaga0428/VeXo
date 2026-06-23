@@ -184,6 +184,63 @@ export async function createImageToVideo(params: {
   return createVideoGeneration({ ...params, mode: "image" })
 }
 
+// ── Kling AI Avatar v2 ────────────────────────────────────────────────────────
+// Takes a portrait image + audio → talking head video with synced lip movement.
+// Replaces the broken image-to-video → lipsync chain entirely.
+export const KLING_AVATAR_ENDPOINT = "fal-ai/kling-video/ai-avatar/v2/standard"
+
+export async function createAvatarVideo(params: {
+  imageUrl: string
+  audioUrl: string
+  prompt?: string
+}): Promise<{ requestId: string }> {
+  const input = {
+    image_url: params.imageUrl,
+    audio_url: params.audioUrl,
+    prompt: params.prompt || "Natural talking head, clear lip movement, looking at camera.",
+    cfg_scale: 0.5,
+    generate_audio: false,
+  }
+  try {
+    const { request_id } = await fal.queue.submit(KLING_AVATAR_ENDPOINT, { input })
+    return { requestId: request_id }
+  } catch (error) {
+    console.error("[avatar] FAL submit error:", error)
+    throw error
+  }
+}
+
+export async function getAvatarVideoStatus(requestId: string): Promise<{
+  status: string
+  videoUrl?: string
+  progress?: number
+}> {
+  try {
+    const status = await fal.queue.status(KLING_AVATAR_ENDPOINT, {
+      requestId,
+      logs: true,
+    })
+    if (status.status === "COMPLETED") {
+      const res = (await fal.queue.result(KLING_AVATAR_ENDPOINT, { requestId })) as {
+        data?: { video?: { url: string }; output?: { video?: { url: string } } }
+      }
+      const data = res.data
+      const videoUrl = data?.video?.url || data?.output?.video?.url
+      return { status: "succeed", videoUrl, progress: 100 }
+    } else if ((status.status as string) === "FAILED") {
+      return { status: "failed", progress: 0 }
+    } else {
+      return {
+        status: "processing",
+        progress: status.status === "IN_PROGRESS" ? 50 : 10,
+      }
+    }
+  } catch (error) {
+    console.error("[avatar] FAL status error:", error)
+    return { status: "processing", progress: 30 }
+  }
+}
+
 export async function getVideoStatus(
   requestId: string,
   model: VexoModel = "standard",

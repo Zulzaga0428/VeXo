@@ -407,6 +407,150 @@ export default function StudioPage() {
           return u
         })
 
+        // ── AVATAR PATH: uploaded photo + narration → Kling AI Avatar ────────
+        // image_url + audio_url → one model → talking video, mouth synced to voice.
+        // Completely replaces the broken image-to-video → lipsync chain.
+        const _narrationText = narrationTextFor(scene)
+        if (scene.sourceImageUrl && _narrationText) {
+          const _sceneVoice = resolveSceneVoice(scene)
+          const _key = narrationKeyFor(_narrationText, _sceneVoice.voiceId, _sceneVoice.lang)
+
+          setScenesSafe((prev) => {
+            const u = [...prev]
+            u[index] = { ...u[index], status: "processing", progress: 20 }
+            return u
+          })
+
+          // Step 1: ensure TTS audio
+          if (_narrationText) await ensureSceneNarration(index)
+          const _fresh = scenesRef.current[index] ?? scene
+          let _audioUrl: string | undefined
+          if (_fresh.narrationAudioUrl && _fresh.narrationKey === _key) {
+            _audioUrl = _fresh.narrationAudioUrl
+          } else if (_narrationText) {
+            try {
+              const ttsRes = await fetch("/api/tts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  text: _narrationText,
+                  voice: _sceneVoice.voiceId,
+                  language: _sceneVoice.lang,
+                }),
+              })
+              const ttsData = await ttsRes.json()
+              if (ttsRes.ok && ttsData.audioUrl) _audioUrl = ttsData.audioUrl as string
+            } catch {
+              // TTS failed — fall through to error below
+            }
+          }
+
+          if (!_audioUrl) {
+            setScenesSafe((prev) => {
+              const u = [...prev]
+              u[index] = { ...u[index], status: "failed", error: "TTS failed" }
+              return u
+            })
+            finish()
+            return
+          }
+
+          // Step 2: submit Kling AI Avatar job
+          setScenesSafe((prev) => {
+            const u = [...prev]
+            u[index] = { ...u[index], status: "processing", progress: 35 }
+            return u
+          })
+          let _avRequestId: string | undefined
+          try {
+            const avRes = await fetch("/api/avatar-video", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ imageUrl: scene.sourceImageUrl, audioUrl: _audioUrl }),
+            })
+            const avData = await avRes.json()
+            if (avRes.ok && avData.requestId) {
+              _avRequestId = avData.requestId as string
+            } else {
+              throw new Error(avData.error || "avatar submit failed")
+            }
+          } catch (e) {
+            setScenesSafe((prev) => {
+              const u = [...prev]
+              u[index] = {
+                ...u[index],
+                status: "failed",
+                error: (e as Error).message || "avatar submit failed",
+              }
+              return u
+            })
+            finish()
+            return
+          }
+
+          // Step 3: poll for result (90 × 5s = 7.5 min cap)
+          setScenesSafe((prev) => {
+            const u = [...prev]
+            u[index] = { ...u[index], status: "processing", progress: 45 }
+            return u
+          })
+          const _requestId = _avRequestId
+          let _avPolls = 0
+          const _avPoll = setInterval(async () => {
+            _avPolls++
+            if (_avPolls > 90) {
+              clearInterval(_avPoll)
+              setScenesSafe((prev) => {
+                const u = [...prev]
+                u[index] = { ...u[index], status: "failed", error: "timeout" }
+                return u
+              })
+              finish()
+              return
+            }
+            try {
+              const stRes = await fetch(
+                `/api/avatar-status?requestId=${encodeURIComponent(_requestId)}`,
+              )
+              const stData = await stRes.json()
+              if (stData.status === "succeed" && stData.videoUrl) {
+                clearInterval(_avPoll)
+                const finalVideo = stData.videoUrl as string
+                fetch("/api/save-video", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    videoUrl: finalVideo,
+                    prompt: scene.summary,
+                    voice: _sceneVoice.voiceId,
+                    seriesCount: scenesRef.current.length,
+                    sceneIndex: index,
+                  }),
+                }).catch(() => {})
+                setScenesSafe((prev) => {
+                  const u = [...prev]
+                  u[index] = { ...u[index], status: "done", progress: 100, videoUrl: finalVideo }
+                  return u
+                })
+                finish()
+              } else if (stData.status === "failed") {
+                clearInterval(_avPoll)
+                setScenesSafe((prev) => {
+                  const u = [...prev]
+                  u[index] = { ...u[index], status: "failed", error: "avatar failed" }
+                  return u
+                })
+                finish()
+              }
+              // "processing" → continue polling
+            } catch {
+              // network blip — continue
+            }
+          }, 5000)
+          return
+        }
+        // ── END AVATAR PATH ───────────────────────────────────────────────────
+
         // If the user uploaded an image for this scene, animate it
         // (image-to-video). Otherwise generate straight from the text.
         const genMode: "image" | "text" = scene.sourceImageUrl ? "image" : "text"

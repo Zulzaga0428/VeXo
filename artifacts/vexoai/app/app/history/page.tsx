@@ -132,7 +132,7 @@ export default function HistoryPage() {
                 ? "Эхний бичлэгээ үүсгээрэй"
                 : "Create your first video"}
             </p>
-            <Link href="/app/studio">
+            <Link href="/app/create">
               <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
                 {locale === "mn" ? "Бичлэг үүсгэх" : "Create Video"}
               </Button>

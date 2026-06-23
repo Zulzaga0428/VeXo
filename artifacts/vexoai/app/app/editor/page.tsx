@@ -135,7 +135,7 @@ export default function ImageGeneratorPage() {
     if (selectedImage !== null && generatedImages[selectedImage]) {
       // Store selected image and redirect to video creation
       sessionStorage.setItem("selectedImage", generatedImages[selectedImage])
-      router.push("/app/studio")
+      router.push("/app/create")
     }
   }
 

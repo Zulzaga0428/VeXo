@@ -39,7 +39,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push("/app/studio")
+    router.push("/app/create")
     router.refresh()
   }
 

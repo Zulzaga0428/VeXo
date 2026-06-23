@@ -54,7 +54,7 @@ export default function RegisterPage() {
     fetch("/api/auth/init-profile", { method: "POST" }).catch(() => null)
 
     // Email confirmation off — user is already logged in, go straight to app
-    router.push("/app/studio")
+    router.push("/app/create")
     router.refresh()
   }
 

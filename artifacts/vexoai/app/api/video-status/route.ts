@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getVideoStatus, type VexoModel, type GenerationMode } from "@/lib/fal-video"
+import { refundCharge, settleCharge } from "@/lib/credits"
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,6 +16,15 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await getVideoStatus(requestId, model, mode)
+
+    // Settle on success / refund on terminal failure (both idempotent). Note:
+    // transient FAL errors are reported as "processing" by getVideoStatus, so
+    // only a genuine terminal FAILED triggers a refund.
+    if (result.status === "succeed") {
+      await settleCharge(requestId)
+    } else if (result.status === "failed") {
+      await refundCharge(requestId)
+    }
 
     return NextResponse.json({
       status: result.status,

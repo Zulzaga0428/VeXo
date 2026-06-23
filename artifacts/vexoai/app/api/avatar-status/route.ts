@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAvatarVideoStatus } from "@/lib/fal-video"
+import { refundCharge, settleCharge } from "@/lib/credits"
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,6 +10,13 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await getAvatarVideoStatus(requestId)
+
+    // Settle on success / refund on terminal failure (both idempotent).
+    if (result.status === "succeed") {
+      await settleCharge(requestId)
+    } else if (result.status === "failed") {
+      await refundCharge(requestId)
+    }
 
     return NextResponse.json({
       status: result.status,

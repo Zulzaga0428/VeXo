@@ -37,10 +37,34 @@ what the routes actually deduct, trust is broken and balances go wrong.
 pass (6 credits/scene) — that would double-charge talking heads and waste
 credits on faceless footage. Don't reintroduce it.
 
+## Rule: async-job failures are refunded via `generation_charges`
+**Why:** credits are deducted at SUBMISSION (deduct-first, so affordability is
+checked upfront), but a FAL job can fail/time out AFTER submission while the
+client polls — the status routes previously had no way to refund.
+**How to apply:**
+- `generate-video` / `avatar-video` call `recordCharge(requestId, userId, cost,
+  kind)` after a successful submit, persisting a row in `generation_charges`
+  keyed by the FAL requestId.
+- `video-status` / `avatar-status` call `refundCharge(requestId)` when
+  `getVideoStatus`/`getAvatarVideoStatus` return the terminal `"failed"`
+  (transient FAL errors are reported as `"processing"`, so they never refund),
+  and `settleCharge(requestId)` on `"succeed"` so a later spurious failure can't
+  refund a paid job. Refund/settle go through SECURITY DEFINER RPCs that flip
+  `pending`→`refunded`/`settled` exactly once, so polling every few seconds is
+  idempotent and safe.
+- All three helpers (`lib/credits.ts`) use the service-role admin client and are
+  best-effort: a missing table/RPC or transient error is logged and never breaks
+  the request/poll path.
+**Manual step (no migrations folder):** the table + RPCs live in
+`artifacts/vexoai/supabase/migrations/0001_generation_charges.sql` and MUST be
+run once in Supabase (SQL Editor), same as `profiles`/`deduct_credits` were.
+Until then async failures simply aren't refunded (no crash).
+**Known gap:** refunds only fire while the client is polling. If the user closes
+the tab before the terminal poll, the charge stays `pending` and is never
+refunded — needs a server-side reconciliation sweep (proposed follow-up).
+
 ## Rule: client generation must be resumable (no double-charge on retry)
-The server routes charge when an async job is *submitted* and refund only on
-synchronous submission failure — a later poll timeout/failure CANNOT be refunded
-(status routes don't know the charge/user). So the browser orchestrator
+The browser orchestrator
 (`use-video-generation`) caches each succeeded scene's output keyed by a
 `runKeyOf(bp)` content hash, plus the stitched final. "Retry" reuses cached
 outputs and only redoes failed/unstarted scenes; the cache is discarded only

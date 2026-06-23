@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createVideoGeneration, type VexoModel, type GenerationMode } from "@/lib/fal-video"
-import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import { chargeCredits, refundCredits, recordCharge, CREDIT_COST } from "@/lib/credits"
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,6 +68,10 @@ export async function POST(request: NextRequest) {
       }
       throw e
     }
+
+    // Record the charge keyed by requestId so /api/video-status can refund it
+    // if the async job later fails or times out.
+    await recordCharge(result.requestId, charge.userId, cost, "video")
 
     return NextResponse.json({
       requestId: result.requestId,

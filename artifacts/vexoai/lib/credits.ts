@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Cost per action in credits — single source of truth lives in the client-safe
 // module so the UI estimate and the server charge can never drift apart.
@@ -62,4 +63,65 @@ export async function refundCredits(userId: string, cost: number) {
     .from("profiles")
     .update({ credits: (profile?.credits || 0) + cost })
     .eq("id", userId)
+}
+
+export type ChargeKind = "video" | "avatar"
+
+// ── Async-job refund tracking ───────────────────────────────────────────────
+// Credits are deducted at SUBMISSION, but a FAL job can still fail/time out
+// while the client polls the status routes. We record each charge keyed by the
+// FAL requestId so the status route can refund it exactly once on terminal
+// failure (and mark it settled on success). Requires the `generation_charges`
+// table + RPCs from supabase/migrations/0001_generation_charges.sql. All three
+// helpers are best-effort: a missing table or transient error is logged and
+// never breaks the request/poll path.
+
+// Record a charge against an async job's requestId so it can be refunded later.
+export async function recordCharge(
+  requestId: string,
+  userId: string,
+  cost: number,
+  kind: ChargeKind,
+) {
+  try {
+    const admin = createAdminClient()
+    const { error } = await admin
+      .from("generation_charges")
+      .insert({ request_id: requestId, user_id: userId, cost, kind })
+    if (error) console.error("[credits] recordCharge failed:", error.message)
+  } catch (e) {
+    console.error("[credits] recordCharge error:", e)
+  }
+}
+
+// Refund a previously-recorded charge exactly once (idempotent server-side).
+// Returns the number of credits refunded (0 if nothing was pending).
+export async function refundCharge(requestId: string): Promise<number> {
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin.rpc("refund_generation_charge", {
+      p_request_id: requestId,
+    })
+    if (error) {
+      console.error("[credits] refundCharge rpc error:", error.message)
+      return 0
+    }
+    return (data as number) ?? 0
+  } catch (e) {
+    console.error("[credits] refundCharge error:", e)
+    return 0
+  }
+}
+
+// Mark a charge settled once its job succeeds so it can never be refunded later.
+export async function settleCharge(requestId: string) {
+  try {
+    const admin = createAdminClient()
+    const { error } = await admin.rpc("settle_generation_charge", {
+      p_request_id: requestId,
+    })
+    if (error) console.error("[credits] settleCharge rpc error:", error.message)
+  } catch (e) {
+    console.error("[credits] settleCharge error:", e)
+  }
 }

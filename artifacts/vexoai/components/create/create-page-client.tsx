@@ -139,8 +139,8 @@ export function CreatePageClient() {
           >
             {navOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 text-accent" />
+          <div className="flex items-center gap-2">
+            <img src="/vexo-logo.png" alt="Vexo" className="h-5 w-5 object-contain" />
             <span className="text-sm font-semibold">{t("Видео үүсгэх", "Create Video")}</span>
           </div>
         </header>
@@ -157,6 +157,7 @@ export function CreatePageClient() {
               onSubmit={handleSubmit}
               onAnswerClarify={handleAnswerClarify}
               disabled={chatDisabled}
+              onNewVideo={handleNewVideo}
             />
           </div>
 

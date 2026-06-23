@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Loader2, Sparkles } from "lucide-react"
+import { ArrowUp, Loader2, Plus, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/hooks/use-blueprint-chat"
 
@@ -13,6 +13,7 @@ interface ChatPanelProps {
   disabled?: boolean
   onSubmit: (text: string) => void
   onAnswerClarify: (answer: string) => void
+  onNewVideo?: () => void
 }
 
 export function ChatPanel({
@@ -23,6 +24,7 @@ export function ChatPanel({
   disabled = false,
   onSubmit,
   onAnswerClarify,
+  onNewVideo,
 }: ChatPanelProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   const [input, setInput] = useState("")
@@ -51,8 +53,16 @@ export function ChatPanel({
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <Sparkles className="h-4 w-4 text-accent" />
         <span className="text-sm font-medium">{t("Найруулагч", "Director")}</span>
+        {onNewVideo && (
+          <button
+            onClick={onNewVideo}
+            className="ml-auto flex items-center gap-1 rounded-lg border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent transition hover:bg-accent/20"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("Шинэ бичлэг", "Create New")}
+          </button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">

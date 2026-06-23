@@ -86,11 +86,21 @@ export async function POST(request: NextRequest) {
     // it would be untracked and unrefundable — compensate now so the user's
     // credits are never silently lost.
     if (!recorded) {
-      console.error(
-        "[generate-video] CHARGE_NOT_RECORDED — compensating to avoid lost credits",
-        { requestId: result.requestId, userId: charge.userId, cost },
-      )
-      await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "video")
+      const comp = await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "video", {
+        model: result.model,
+        mode: result.mode,
+      })
+      if (comp.status === "failed") {
+        // Could neither record nor refund — the user is still debited. Emit a
+        // greppable incident so it can be alerted on and recovered manually.
+        console.error("[generate-video] BILLING_INCIDENT charge_unrecovered", {
+          requestId: result.requestId, userId: charge.userId, cost, kind: "video",
+        })
+      } else {
+        console.error("[generate-video] CHARGE_NOT_RECORDED resolved via compensation", {
+          requestId: result.requestId, userId: charge.userId, cost, outcome: comp.status,
+        })
+      }
     }
 
     return NextResponse.json({

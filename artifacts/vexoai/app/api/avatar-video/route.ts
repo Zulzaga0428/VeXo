@@ -46,11 +46,16 @@ export async function POST(request: NextRequest) {
     const recorded = await recordCharge(result.requestId, charge.userId, cost, "avatar")
     // Untracked submitted job -> compensate so the user's credits aren't lost.
     if (!recorded) {
-      console.error(
-        "[avatar-video] CHARGE_NOT_RECORDED — compensating to avoid lost credits",
-        { requestId: result.requestId, userId: charge.userId, cost },
-      )
-      await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "avatar")
+      const comp = await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "avatar")
+      if (comp.status === "failed") {
+        console.error("[avatar-video] BILLING_INCIDENT charge_unrecovered", {
+          requestId: result.requestId, userId: charge.userId, cost, kind: "avatar",
+        })
+      } else {
+        console.error("[avatar-video] CHARGE_NOT_RECORDED resolved via compensation", {
+          requestId: result.requestId, userId: charge.userId, cost, outcome: comp.status,
+        })
+      }
     }
 
     return NextResponse.json({ requestId: result.requestId })

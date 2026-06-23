@@ -177,40 +177,86 @@ export async function settleCharge(requestId: string): Promise<number> {
   }
 }
 
+// Outcome of compensating a charge that recordCharge could not persist. Callers
+// MUST inspect this — a `failed` outcome means the user is still debited with no
+// automatic recovery and needs a billing-incident alert.
+export type CompensationOutcome =
+  // The atomic RPC inserted a refunded row and credited the user.
+  | { status: "credited"; credited: number }
+  // The RPC found a row already existed (recordCharge actually landed after all);
+  // the poll/sweep owns that row, so it WILL be resolved — nothing lost.
+  | { status: "already_recorded"; credited: 0 }
+  // The RPC was unavailable, but a guarded `pending` row was persisted instead, so
+  // the existing poll/sweep will refund on failure (or settle on success).
+  | { status: "deferred"; credited: 0 }
+  // Nothing could be written — the user is still debited. Raise a billing incident.
+  | { status: "failed"; credited: 0 }
+
 // Billing safety net for when a job was submitted (the user is already charged)
 // but its charge row could NOT be persisted by recordCharge. Without a row,
 // neither the status poll nor the reconciliation sweep can ever refund the
-// charge, so the credits would be silently lost. Credit the user back here.
+// charge, so the credits would be silently lost. This restores them.
 //
-// Backed by the SECURITY DEFINER `compensate_unrecorded_charge` RPC, which does
-// the credit-back ATOMICALLY and only when no row already exists for the
-// requestId (ON CONFLICT DO NOTHING). That single guard makes this both
-// double-refund-safe (a pending row that actually landed is left for the
-// poll/sweep to own) and idempotent (a repeat call returns 0). The non-zero
-// return value therefore means the credit really was applied — we never claim a
-// refund that didn't happen. Returns the credits restored (0 if the RPC errored
-// or a row already existed — logged loudly so it can be monitored).
+// CORRECTNESS INVARIANT: credits are NEVER added outside the `request_id`
+// idempotency guard. Every crediting path here resolves through a row keyed by
+// request_id (the compensate RPC's ON CONFLICT DO NOTHING insert, or the
+// poll/sweep refunding a pending row). We never do a raw `profiles` credit, which
+// could double-refund a row that actually landed and is non-atomic under load.
+//
+// Tiered so a single failure can't lose credits:
+//  1. The SECURITY DEFINER `compensate_unrecorded_charge` RPC (atomic, idempotent,
+//     double-refund-safe via ON CONFLICT DO NOTHING), retried a few times to ride
+//     out transient errors. A clean `0` means a row already exists → the poll/
+//     sweep owns it → `already_recorded`, safe.
+//  2. If the RPC keeps erroring, fall back to persisting a guarded `pending` row
+//     (idempotent recordCharge). This does NOT credit — it hands the charge to the
+//     existing poll/sweep, which refund/settle it through the same request_id
+//     guard. So even if a row already landed, there is no double credit. Succeeds
+//     in the partial-failure case (e.g. the RPC is missing because migration 0001
+//     isn't fully applied, but plain table writes still work) → `deferred`.
+//  3. If even that write fails, the generation_charges write path is unavailable
+//     and nothing can be durably recorded → `failed`, so the caller raises a
+//     billing incident for manual recovery. We never claim a refund that didn't
+//     happen.
 export async function compensateUnrecordedCharge(
   requestId: string,
   userId: string,
   cost: number,
   kind: ChargeKind,
-): Promise<number> {
-  try {
-    const admin = createAdminClient()
-    const { data, error } = await admin.rpc("compensate_unrecorded_charge", {
-      p_request_id: requestId,
-      p_user_id: userId,
-      p_cost: cost,
-      p_kind: kind,
-    })
-    if (error) {
-      console.error("[credits] compensateUnrecordedCharge rpc error:", error.message)
-      return 0
+  meta?: { model?: string; mode?: string },
+): Promise<CompensationOutcome> {
+  const admin = createAdminClient()
+
+  // ── Tier 1: atomic idempotent RPC, with bounded retries on transient error ──
+  let lastErr: string | undefined
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { data, error } = await admin.rpc("compensate_unrecorded_charge", {
+        p_request_id: requestId,
+        p_user_id: userId,
+        p_cost: cost,
+        p_kind: kind,
+      })
+      if (!error) {
+        const credited = (data as number) ?? 0
+        return credited > 0
+          ? { status: "credited", credited }
+          : { status: "already_recorded", credited: 0 }
+      }
+      lastErr = error.message
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e)
     }
-    return (data as number) ?? 0
-  } catch (e) {
-    console.error("[credits] compensateUnrecordedCharge error:", e)
-    return 0
+    await sleep(200 * (attempt + 1))
   }
+  console.error("[credits] compensate RPC failed after retries:", lastErr)
+
+  // ── Tier 2: persist a guarded `pending` row so the poll/sweep recovers it ──
+  // No credit happens here; recovery flows through the same request_id guard, so
+  // this is double-refund-safe even if recordCharge actually landed a row earlier.
+  const deferred = await recordCharge(requestId, userId, cost, kind, meta)
+  if (deferred) return { status: "deferred", credited: 0 }
+
+  // ── Tier 3: the charges table itself is unwritable — nothing can be recorded ──
+  return { status: "failed", credited: 0 }
 }

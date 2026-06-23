@@ -97,19 +97,37 @@ row exists, so nothing can ever refund it — credits are silently lost.
 - When `recordCharge` returns `false`, both submit routes call
   `compensateUnrecordedCharge(requestId, userId, cost, kind)` and log a greppable
   `CHARGE_NOT_RECORDED` line.
-- Compensation goes through the `compensate_unrecorded_charge` SECURITY DEFINER
-  RPC — NOT a direct profile write. It atomically inserts a row as already-
-  `refunded` and credits the user, guarded by `ON CONFLICT (request_id) DO
-  NOTHING`. That one guard is the whole correctness argument: if a pending row
-  actually landed, the insert no-ops and credits nothing (the poll/sweep owns
-  that row → no double-refund); if no row exists it credits exactly once; a
-  repeat call returns 0 (idempotent). A non-zero return therefore means the
-  credit truly applied — never re-credit via a non-atomic read-modify-write, and
-  never treat refundCharge's `0` (which also means "RPC error") as "no row".
-- Net effect: the user is credited back exactly once. If the untracked job later
-  succeeds the user simply keeps the credits (acceptable — erring toward user).
-  If the RPC itself errors, compensation returns 0 and logs (rare DB outage,
-  unrecoverable here — do not silently claim a refund happened).
+- **CORRECTNESS INVARIANT:** credits are NEVER added outside the `request_id`
+  idempotency guard. Every credit resolves through a row keyed by request_id (the
+  compensate RPC's `ON CONFLICT DO NOTHING` insert, OR the poll/sweep refunding a
+  pending row). NEVER do a raw `profiles` credit in the fallback — a direct credit
+  can double-refund a row that actually landed (recordCharge can commit a row but
+  return an error on a lost response, while the RPC separately fails) and is
+  non-atomic under load. This exact mistake was caught in review — do not redo it.
+- Compensation is TIERED and returns a discriminated `CompensationOutcome`
+  (`credited` | `already_recorded` | `deferred` | `failed`) — callers MUST inspect
+  it, never ignore it.
+  1. **Tier 1:** `compensate_unrecorded_charge` SECURITY DEFINER RPC (atomic,
+     idempotent), retried a few times to ride out transient errors. Inserts a row
+     as already-`refunded` and credits the user, guarded by `ON CONFLICT
+     (request_id) DO NOTHING`: if a pending row already landed it no-ops and
+     credits nothing (poll/sweep owns it → `already_recorded`); else credits once
+     (`credited`); a repeat returns 0. A clean `0` means "row exists", NEVER "RPC
+     error".
+  2. **Tier 2:** if the RPC keeps erroring, persist a guarded `pending` row via the
+     idempotent `recordCharge(...)` (pass `{model,mode}` for b_roll so the sweep
+     can re-check the right FAL endpoint). This does NOT credit — it hands the
+     charge to the existing poll/sweep, which refund/settle through the SAME
+     request_id guard, so it's double-refund-safe even if a row already landed.
+     Succeeds in the partial-failure case (RPC missing because 0001 isn't fully
+     applied, but plain table writes work) → `deferred`.
+  3. **Tier 3:** if even the pending insert fails, the charges table is unwritable
+     → `failed`; the route logs a greppable `BILLING_INCIDENT charge_unrecovered`
+     line for manual recovery. You cannot durably record anything when the only
+     datastore is unreachable — do not claim a refund that didn't happen.
+- Net effect: the user is credited back exactly once. If an eagerly-refunded
+  (Tier 1) job later succeeds the user simply keeps the credits (acceptable —
+  erring toward user); deferred (Tier 2) charges refund only on actual failure.
 
 ## Rule: client generation must be resumable (no double-charge on retry)
 The browser orchestrator

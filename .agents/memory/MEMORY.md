@@ -1,2 +1,2 @@
 - [Supabase deploy constraints](supabase-deploy-constraints.md) — VexoAI has no migration runner / no direct DB; new SQL (RPCs, schema) must be run manually in the Supabase SQL Editor.
-- [Credits atomicity invariant](credits-invariant.md) — all credit-balance mutations must be atomic + idempotent DB RPCs (never client read-modify-write); refunds return bool + log REFUND_FAILED; poll endpoints gate refunds to a single owner.
+- [Credits atomicity invariant](credits-invariant.md) — credit mutations must be atomic+idempotent DB RPCs (never client read-modify-write); poll endpoints/sweeps refund/settle by requestId-keyed RPC (exactly-once cross-instance); lipsync map is cache-only.

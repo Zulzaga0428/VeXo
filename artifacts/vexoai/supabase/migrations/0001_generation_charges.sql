@@ -177,12 +177,79 @@ begin
 end;
 $$;
 
+-- Move a still-pending charge to a successor requestId in ONE atomic, idempotent
+-- transaction. Lip-sync retries on a different engine (natural LatentSync ->
+-- pro sync-lipsync/v2) by submitting a NEW FAL job with a NEW requestId, so the
+-- single credit charge must "follow" the active job (the status poll and the
+-- reconcile sweep re-check FAL by request_id). This settles the old row (so it
+-- can never be refunded) and inserts a fresh 'pending' successor carrying the
+-- same user_id/cost/kind, gated on the old row STILL being pending.
+--
+-- The `for update` lock + "old must be pending" check is the cross-instance,
+-- single-owner gate for the fallback: if two concurrent polls each submit a pro
+-- job and call this, only the first transfers (returns 1); the rest see a
+-- non-pending old row (or an existing successor) and return 0, leaving exactly
+-- one successor charge. Callers that get 0 must discard their orphan FAL job.
+-- Returns 1 when THIS call performed the transfer, else 0.
+create or replace function public.transfer_generation_charge(
+  p_old_request_id text,
+  p_new_request_id text,
+  p_new_model      text
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id  uuid;
+  v_cost     integer;
+  v_kind     text;
+  v_inserted integer;
+begin
+  -- Claim the old charge: it must still be pending. Lock it so a concurrent
+  -- transfer or refund of the same row is serialized behind us.
+  select user_id, cost, kind
+    into v_user_id, v_cost, v_kind
+    from public.generation_charges
+   where request_id = p_old_request_id
+     and status = 'pending'
+   for update;
+
+  if v_user_id is null then
+    return 0;  -- old not pending (already resolved/transferred) -> not the owner
+  end if;
+
+  -- Insert the successor pending row. If it already exists, abort WITHOUT
+  -- touching the old row so it can still be refunded/resolved normally.
+  insert into public.generation_charges
+    (request_id, user_id, cost, kind, model, status)
+  values
+    (p_new_request_id, v_user_id, v_cost, coalesce(v_kind, 'lipsync'), p_new_model, 'pending')
+  on conflict (request_id) do nothing;
+
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then
+    return 0;  -- successor already exists -> leave old pending, not the owner
+  end if;
+
+  -- Settle the old row: the refundable charge now lives on the successor.
+  update public.generation_charges
+     set status = 'settled', resolved_at = now()
+   where request_id = p_old_request_id;
+
+  return 1;
+end;
+$$;
+
 -- Lock the functions down to the server only.
 revoke all on function public.refund_generation_charge(text) from public, anon, authenticated;
 revoke all on function public.settle_generation_charge(text) from public, anon, authenticated;
 revoke all on function public.compensate_unrecorded_charge(text, uuid, integer, text) from public, anon, authenticated;
 revoke all on function public.credit_user(uuid, integer) from public, anon, authenticated;
+revoke all on function public.transfer_generation_charge(text, text, text) from public, anon, authenticated;
 grant execute on function public.refund_generation_charge(text) to service_role;
 grant execute on function public.settle_generation_charge(text) to service_role;
 grant execute on function public.compensate_unrecorded_charge(text, uuid, integer, text) to service_role;
 grant execute on function public.credit_user(uuid, integer) to service_role;
+grant execute on function public.transfer_generation_charge(text, text, text) to service_role;

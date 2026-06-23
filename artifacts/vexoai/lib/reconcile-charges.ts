@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import {
   getVideoStatus,
   getAvatarVideoStatus,
+  getLipsyncStatus,
   type VexoModel,
   type GenerationMode,
 } from "@/lib/fal-video"
@@ -84,6 +85,12 @@ export async function reconcilePendingCharges(opts?: {
       let status: string
       if (row.kind === "avatar") {
         ;({ status } = await getAvatarVideoStatus(row.request_id))
+      } else if (row.kind === "lipsync") {
+        // `model` holds the FAL endpoint (latentsync | sync-lipsync/v2). The
+        // sweep never performs the natural->pro fallback (no live media): it just
+        // refunds a terminal failure or settles a success.
+        const model = row.model || "fal-ai/sync-lipsync/v2"
+        ;({ status } = await getLipsyncStatus(row.request_id, model))
       } else {
         const model = (row.model as VexoModel) || "standard"
         const mode = (row.mode as GenerationMode) || "image"

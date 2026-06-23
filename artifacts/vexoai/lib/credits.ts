@@ -95,7 +95,7 @@ export async function refundCredits(userId: string, cost: number): Promise<boole
   }
 }
 
-export type ChargeKind = "video" | "avatar"
+export type ChargeKind = "video" | "avatar" | "lipsync"
 
 // ── Async-job refund tracking ───────────────────────────────────────────────
 // Credits are deducted at SUBMISSION, but a FAL job can still fail/time out
@@ -183,6 +183,63 @@ export async function refundCharge(requestId: string): Promise<number> {
   } catch (e) {
     console.error("[credits] refundCharge error:", e)
     return 0
+  }
+}
+
+// Move a still-pending charge from a failed FAL requestId to its successor. The
+// lip-sync natural -> pro fallback mints a NEW requestId, so the single charge
+// must follow the active FAL job (the poll/sweep re-check FAL by request_id).
+// Atomic + idempotent via the transfer_generation_charge RPC: it settles the old
+// row and inserts a pending successor in ONE transaction, gated on the old row
+// still being pending — so concurrent polls/instances produce EXACTLY ONE
+// successor (the rest are no-ops whose orphan FAL job must be discarded). Returns
+// true only when THIS call performed the transfer.
+export async function transferCharge(
+  oldRequestId: string,
+  newRequestId: string,
+  newModel: string,
+): Promise<boolean> {
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin.rpc("transfer_generation_charge", {
+      p_old_request_id: oldRequestId,
+      p_new_request_id: newRequestId,
+      p_new_model: newModel,
+    })
+    if (error) {
+      console.error("[credits] transferCharge rpc error:", error.message)
+      return false
+    }
+    return ((data as number) ?? 0) > 0
+  } catch (e) {
+    console.error("[credits] transferCharge error:", e)
+    return false
+  }
+}
+
+// Fetch a charge row by requestId so a poll can recover the FAL endpoint (model)
+// and resolve a job AFTER the in-memory job cache is lost (server restart) or on
+// another instance. Returns null if no row exists or on error.
+export async function getCharge(
+  requestId: string,
+): Promise<{ model: string | null; status: string; userId: string; cost: number } | null> {
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from("generation_charges")
+      .select("model, status, user_id, cost")
+      .eq("request_id", requestId)
+      .maybeSingle()
+    if (error) {
+      console.error("[credits] getCharge error:", error.message)
+      return null
+    }
+    if (!data) return null
+    const row = data as { model: string | null; status: string; user_id: string; cost: number }
+    return { model: row.model, status: row.status, userId: row.user_id, cost: row.cost }
+  } catch (e) {
+    console.error("[credits] getCharge error:", e)
+    return null
   }
 }
 

@@ -283,3 +283,33 @@ export async function getVideoStatus(
     return { status: "processing", progress: 30 }
   }
 }
+
+// ── Lip-sync status ───────────────────────────────────────────────────────────
+// Poll a lip-sync job by its stored FAL endpoint (`model`): "fal-ai/latentsync"
+// (natural) or "fal-ai/sync-lipsync/v2" (pro). Used by /api/lipsync-status and
+// the reconcile sweep so both resolve a job from the durable charge row's model,
+// not in-memory state. A COMPLETED job WITHOUT an output video url is a terminal
+// FAILURE for lip-sync (no usable result), reported as "failed" so it refunds.
+// Transient errors are reported as "processing" so we never speculatively refund.
+export async function getLipsyncStatus(
+  requestId: string,
+  model: string,
+): Promise<{ status: "succeed" | "failed" | "processing"; videoUrl?: string }> {
+  try {
+    const status = await fal.queue.status(model, { requestId, logs: false })
+    if (status.status === "COMPLETED") {
+      const res = (await fal.queue.result(model, { requestId })) as {
+        data?: { video?: { url?: string }; video_url?: string }
+      }
+      const videoUrl = res.data?.video?.url || res.data?.video_url
+      return { status: videoUrl ? "succeed" : "failed", videoUrl }
+    } else if ((status.status as string) === "FAILED") {
+      return { status: "failed" }
+    } else {
+      return { status: "processing" }
+    }
+  } catch (error) {
+    console.error("[lipsync] FAL status error:", error)
+    return { status: "processing" }
+  }
+}

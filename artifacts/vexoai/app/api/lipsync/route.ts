@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
-import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import {
+  chargeCredits,
+  refundCredits,
+  recordCharge,
+  compensateUnrecordedCharge,
+  CREDIT_COST,
+} from "@/lib/credits"
 import { pendingLipsyncJobs, type LipsyncEngine } from "@/lib/lipsync-jobs"
 
 fal.config({ credentials: process.env.FAL_KEY })
@@ -89,13 +95,69 @@ export async function POST(request: NextRequest) {
 
     if (!requestId) throw new Error("FAL queue submit returned no request_id")
 
-    // Register the job so /api/lipsync-status can look it up
+    const falEndpoint = engineEndpoint(activeEngine)
+
+    // Persist the charge durably so refunds survive restarts/scaling — the
+    // status poll and the reconcile sweep refund/settle by this requestId. If the
+    // row can't be written, compensate so the user is never charged for a job no
+    // refund path can recover. (refundCredits below is only for the pre-record
+    // submit-throw path, where no charge row exists yet.)
+    const recorded = await recordCharge(
+      requestId,
+      charge.userId,
+      CREDIT_COST.lipsync,
+      "lipsync",
+      { model: falEndpoint },
+    )
+    if (!recorded) {
+      const outcome = await compensateUnrecordedCharge(
+        requestId,
+        charge.userId,
+        CREDIT_COST.lipsync,
+        "lipsync",
+        { model: falEndpoint },
+      )
+      if (outcome.status === "credited") {
+        // The charge couldn't be tracked, so it was refunded now. Do NOT return a
+        // requestId — a tracked refund plus a pollable job would let the user get
+        // a free result after already being credited back.
+        return NextResponse.json(
+          {
+            error:
+              "Lip-sync could not be started. Your credits were refunded — please try again.",
+          },
+          { status: 503 },
+        )
+      }
+      if (outcome.status === "failed") {
+        // Nothing recorded and nothing credited: the user is still debited with
+        // no automatic recovery. Surface loudly for manual reconciliation.
+        console.error("[lipsync] BILLING_INCIDENT charge unrecorded and uncompensated", {
+          requestId,
+          userId: charge.userId,
+          cost: CREDIT_COST.lipsync,
+        })
+        return NextResponse.json(
+          {
+            error:
+              "Lip-sync could not be started. Please contact support if your credits were not returned.",
+          },
+          { status: 500 },
+        )
+      }
+      // already_recorded | deferred -> a pending row exists; safe to proceed.
+    }
+
+    // Fast-path metadata cache for the natural->pro fallback (videoUrl/audioUrl).
+    // NOT authoritative for refunds — the generation_charges row above is. Lost on
+    // restart, which only disables the fallback (the job then refunds), never a
+    // refund itself.
     pendingLipsyncJobs.set(requestId, {
       videoUrl,
       audioUrl,
       userId: charge.userId,
       engine: activeEngine,
-      model: engineEndpoint(activeEngine),
+      model: falEndpoint,
     })
 
     return NextResponse.json({ requestId, engine: activeEngine })

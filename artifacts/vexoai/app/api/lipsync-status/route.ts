@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
-import { refundCredits, CREDIT_COST } from "@/lib/credits"
+import { getLipsyncStatus } from "@/lib/fal-video"
+import { refundCharge, settleCharge, transferCharge, getCharge } from "@/lib/credits"
 import { pendingLipsyncJobs } from "@/lib/lipsync-jobs"
 
 fal.config({ credentials: process.env.FAL_KEY })
+
+// FAL endpoints, stored in each charge row's `model` so a job can be resolved
+// without in-memory state (after a restart or on another instance).
+const NATURAL_ENDPOINT = "fal-ai/latentsync"
+const PRO_ENDPOINT = "fal-ai/sync-lipsync/v2"
 
 // Status poll for async lipsync jobs submitted by /api/lipsync.
 // Returns one of: { status: "processing" | "done" | "fallback" | "failed" }
@@ -22,100 +28,100 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const requestId = searchParams.get("requestId")
   // NOTE: the client also sends an `engine` query param, but we deliberately
-  // ignore it for control flow and use the authoritative server-side job.engine
-  // below — trusting the client could let a failed pro job spawn another pro
-  // fallback instead of refunding.
+  // ignore it for control flow and rely on the authoritative server-side model
+  // (the in-memory job, else the durable charge row) — trusting the client could
+  // let a failed pro job spawn another pro fallback instead of refunding.
 
   if (!requestId) {
     return NextResponse.json({ error: "requestId required" }, { status: 400 })
   }
 
+  // Fast-path metadata cache (videoUrl/audioUrl/model) needed for the natural->
+  // pro fallback. Absent after a server restart or on another instance — refund
+  // correctness no longer depends on it.
   const job = pendingLipsyncJobs.get(requestId)
-  if (!job) {
-    // Server may have restarted and lost in-memory state
+
+  // The FAL endpoint to poll: prefer the in-memory job, else recover it from the
+  // durable charge row so a restarted/other instance can still resolve the job.
+  let model = job?.model
+  if (!model) {
+    const charge = await getCharge(requestId)
+    model = charge?.model ?? undefined
+  }
+  if (!model) {
+    // No live metadata and no charge row -> nothing to resolve against. (A
+    // pending row that somehow lacks a model is still handled by the reconcile
+    // sweep, which defaults to the pro endpoint and refunds/settles it.)
     return NextResponse.json({
       status: "failed",
-      error: "Job not found (server restarted?). Please retry generation.",
+      error: "Job not found. Please retry generation.",
     })
   }
 
   try {
-    const qStatus = (await fal.queue.status(job.model, {
-      requestId,
-      logs: false,
-    })) as { status: string }
+    const result = await getLipsyncStatus(requestId, model)
 
-    if (qStatus.status === "IN_QUEUE" || qStatus.status === "IN_PROGRESS") {
+    if (result.status === "processing") {
       return NextResponse.json({ status: "processing" })
     }
 
-    if (qStatus.status === "COMPLETED") {
-      const result = (await fal.queue.result(job.model, { requestId })) as {
-        data?: { video?: { url?: string }; video_url?: string }
-      }
-      const videoUrl = result.data?.video?.url || result.data?.video_url
-
-      if (videoUrl) {
-        pendingLipsyncJobs.delete(requestId)
-        return NextResponse.json({ status: "done", videoUrl })
-      }
-
-      console.warn("[lipsync-status] COMPLETED but no video url, engine:", job.engine, "requestId:", requestId)
-    } else if (qStatus.status === "FAILED") {
-      console.warn("[lipsync-status] FAL job FAILED, engine:", job.engine, "requestId:", requestId)
-    } else {
-      // Unknown status — keep polling
-      return NextResponse.json({ status: "processing" })
+    if (result.status === "succeed" && result.videoUrl) {
+      // Settle (idempotent) so a later spurious failure poll can never refund it.
+      await settleCharge(requestId)
+      pendingLipsyncJobs.delete(requestId)
+      return NextResponse.json({ status: "done", videoUrl: result.videoUrl })
     }
 
-    // Terminal: COMPLETED-without-url or FAILED. This is a POLL endpoint, so two
-    // concurrent polls can reach here for the same requestId. Claim EXCLUSIVE
-    // ownership of the transition BEFORE doing anything terminal — otherwise both
-    // polls could submit a pro fallback (duplicate FAL jobs for one charge) and
-    // later both refund (refundCredits is not idempotent). Map.delete() is
-    // synchronous/atomic in single-threaded JS: only the poll that removes the
-    // entry owns the transition. Losers return "processing" and let the owner's
-    // outcome (fallback newId or refund) stand. (Jobs live in a per-instance
-    // in-memory map, so this single-process gate matches the lipsync design.)
-    const owns = pendingLipsyncJobs.delete(requestId)
-    if (!owns) {
-      return NextResponse.json({ status: "processing" })
-    }
-
-    // We own this requestId — try the natural -> pro fallback exactly once.
-    // Branch on the authoritative server-side job.engine (NOT the client query
-    // param): a terminal pro job must refund here, never spawn another pro job.
-    if (job.engine === "natural") {
+    // Terminal failure (FAILED, or COMPLETED without a usable video url). Try the
+    // natural -> pro fallback exactly once, but ONLY for a natural job AND only
+    // while the source media is still cached in memory to resubmit. After a
+    // restart (no metadata) we degrade to a refund.
+    const isNatural = model === NATURAL_ENDPOINT
+    if (isNatural && job) {
       try {
-        const fallback = (await fal.queue.submit("fal-ai/sync-lipsync/v2", {
+        const fallback = (await fal.queue.submit(PRO_ENDPOINT, {
           input: proInput(job.videoUrl, job.audioUrl) as never,
         })) as { request_id: string }
-
         const newId = fallback.request_id
-        pendingLipsyncJobs.set(newId, {
-          ...job,
-          engine: "pro",
-          model: "fal-ai/sync-lipsync/v2",
-        })
-        console.warn("[lipsync-status] falling back to lipsync-2-pro, new requestId:", newId)
-        return NextResponse.json({ status: "fallback", requestId: newId, engine: "pro" })
+
+        // Atomically move the charge onto the new requestId. The RPC's
+        // "old must still be pending" check is the cross-instance single-owner
+        // gate: only ONE concurrent poll wins the transfer.
+        const transferred = await transferCharge(requestId, newId, PRO_ENDPOINT)
+        if (transferred) {
+          pendingLipsyncJobs.delete(requestId)
+          pendingLipsyncJobs.set(newId, { ...job, engine: "pro", model: PRO_ENDPOINT })
+          console.warn("[lipsync-status] falling back to lipsync-2-pro, new requestId:", newId)
+          return NextResponse.json({ status: "fallback", requestId: newId, engine: "pro" })
+        }
+
+        // We lost the ownership race (another poll/instance already resolved or
+        // transferred this charge). Our pro job has no charge row — discard it as
+        // an orphan and let the owner's outcome stand.
+        console.warn(
+          "[lipsync-status] fallback transfer lost ownership; discarding orphan pro job:",
+          newId,
+        )
+        pendingLipsyncJobs.delete(requestId)
+        return NextResponse.json({ status: "processing" })
       } catch (e) {
         console.warn(
-          "[lipsync-status] pro fallback submit also failed:",
+          "[lipsync-status] pro fallback submit failed:",
           e instanceof Error ? e.message : e,
         )
-        // We already own (removed) this requestId, so fall through and refund now
-        // rather than relying on a later poll of an id that no longer exists.
+        // Fall through to refund below.
       }
     }
 
-    // All engines exhausted (or the fallback submit failed). We own the
-    // requestId, so this refunds exactly once.
-    await refundCredits(job.userId, CREDIT_COST.lipsync)
+    // No fallback (pro job, restart with no metadata, or the fallback submit
+    // threw). Refund exactly once — idempotent across concurrent polls and
+    // instances via the request_id-keyed RPC.
+    await refundCharge(requestId)
+    pendingLipsyncJobs.delete(requestId)
     return NextResponse.json({ status: "failed", error: "Lip-sync failed on all engines" })
   } catch (error) {
     console.error("[lipsync-status] unexpected error:", error)
-    // Return processing so the client retries rather than hard-failing
+    // Return processing so the client retries rather than hard-failing.
     return NextResponse.json({ status: "processing" })
   }
 }

@@ -122,30 +122,39 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
           </button>
         </div>
 
-        {/* Avatar + Voice compact card */}
-        <div className="rounded-2xl border border-border/60 bg-card/60 p-4 space-y-3">
-          <AvatarPicker
-            locale={locale}
-            avatar={blueprint.avatar}
-            orientation={blueprint.orientation}
-            required={hasTalkingHead(blueprint)}
-            onChange={(avatar) => patch({ avatar })}
-          />
+        {/* Avatar + Voice — side by side */}
+        <div className="rounded-2xl border border-border/60 bg-card/60 p-4">
+          <div className="flex gap-3">
+            {/* Avatar — left half */}
+            <div className="flex-1 min-w-0">
+              <AvatarPicker
+                locale={locale}
+                avatar={blueprint.avatar}
+                orientation={blueprint.orientation}
+                required={hasTalkingHead(blueprint)}
+                onChange={(avatar) => patch({ avatar })}
+              />
+            </div>
 
-          <div className="border-t border-border/40 pt-3 space-y-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              {t("Хоолой", "Voice")}
-            </span>
-            <VoicePicker
-              value={{ voiceId: blueprint.voice.voiceId, lang: blueprint.voice.lang }}
-              onChange={(sel) =>
-                patch({
-                  voice: { ...blueprint.voice, voiceId: sel.voiceId, lang: sel.lang },
-                  language: sel.lang === "en" ? "en" : "mn",
-                })
-              }
-              locale={locale}
-            />
+            {/* Divider */}
+            <div className="w-px self-stretch bg-border/40 shrink-0" />
+
+            {/* Voice — right half */}
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {t("Хоолой", "Voice")}
+              </span>
+              <VoicePicker
+                value={{ voiceId: blueprint.voice.voiceId, lang: blueprint.voice.lang }}
+                onChange={(sel) =>
+                  patch({
+                    voice: { ...blueprint.voice, voiceId: sel.voiceId, lang: sel.lang },
+                    language: sel.lang === "en" ? "en" : "mn",
+                  })
+                }
+                locale={locale}
+              />
+            </div>
           </div>
         </div>
 

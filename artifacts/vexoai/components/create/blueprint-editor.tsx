@@ -168,62 +168,52 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
 
         {/* Characters section */}
         <div className="rounded-2xl border border-border/60 bg-card/60 p-4 space-y-3">
-          {/* Section header */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">
-              {t("Дүрүүд", "Characters")}
-              <span className="ml-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">
-                {allCharacters.length}
-              </span>
-            </span>
-          </div>
-          {/* Thumbnail row */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {allCharacters.map((char, idx) => (
-              <button
-                key={char.id}
-                onClick={() => setSelectedCharIdx(idx)}
-                className={cn(
-                  "relative flex flex-col items-center gap-1 rounded-xl p-1.5 transition select-none",
-                  selectedCharIdx === idx
-                    ? "bg-accent/10 ring-1 ring-accent/40"
-                    : "hover:bg-muted/40",
-                )}
-              >
-                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
-                  {char.avatar.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={char.avatar.imageUrl} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <User className="h-4 w-4 text-muted-foreground" />
+          {/* Character tabs — only visible when 2+ characters */}
+          {allCharacters.length > 1 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {allCharacters.map((char, idx) => (
+                <button
+                  key={char.id}
+                  onClick={() => setSelectedCharIdx(idx)}
+                  className={cn(
+                    "relative flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition select-none",
+                    selectedCharIdx === idx
+                      ? "bg-accent/15 text-accent ring-1 ring-accent/30"
+                      : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
                   )}
-                </div>
-                <span className="text-[10px] text-muted-foreground">
+                >
+                  <div className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border border-current/20 bg-muted">
+                    {char.avatar.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={char.avatar.imageUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <User className="h-2.5 w-2.5" />
+                    )}
+                  </div>
                   {idx === 0 ? t("Үндсэн", "Main") : `${t("Дүр", "Actor")} ${idx + 1}`}
-                </span>
-                {idx > 0 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeCharacter(idx) }}
-                    className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:text-destructive"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                )}
+                  {idx > 0 && (
+                    <span
+                      role="button"
+                      onClick={(e) => { e.stopPropagation(); removeCharacter(idx) }}
+                      className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-current/50 hover:text-destructive transition"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                onClick={addCharacter}
+                className="flex items-center gap-1 rounded-full border border-dashed border-border/50 px-2.5 py-1 text-xs text-muted-foreground transition hover:border-accent/50 hover:text-accent"
+              >
+                <Plus className="h-3 w-3" />
+                {t("Нэмэх", "Add")}
               </button>
-            ))}
+            </div>
+          )}
 
-            {/* Add character button */}
-            <button
-              onClick={addCharacter}
-              className="flex h-[60px] w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-border/50 text-muted-foreground transition hover:border-accent/50 hover:bg-accent/5 hover:text-accent"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="text-[10px]">{t("Нэмэх", "Add")}</span>
-            </button>
-          </div>
-
-          {/* Inline editor for selected character */}
-          <div className="flex gap-3 border-t border-border/40 pt-3">
+          {/* Avatar + Voice editor */}
+          <div className="flex gap-3">
             <div className="min-w-0 flex-1">
               <AvatarPicker
                 locale={locale}
@@ -247,6 +237,17 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
               />
             </div>
           </div>
+
+          {/* Add character — subtle link, only when single character */}
+          {allCharacters.length === 1 && (
+            <button
+              onClick={addCharacter}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/50 transition hover:text-accent"
+            >
+              <Plus className="h-3 w-3" />
+              {t("Дүр нэмэх", "Add character")}
+            </button>
+          )}
         </div>
 
         {/* Scenes */}

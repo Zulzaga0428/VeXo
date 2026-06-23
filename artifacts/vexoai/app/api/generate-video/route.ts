@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createVideoGeneration, type VexoModel, type GenerationMode } from "@/lib/fal-video"
-import { chargeCredits, refundCredits, recordCharge, CREDIT_COST } from "@/lib/credits"
+import {
+  chargeCredits,
+  refundCredits,
+  recordCharge,
+  compensateUnrecordedCharge,
+  CREDIT_COST,
+} from "@/lib/credits"
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,10 +78,20 @@ export async function POST(request: NextRequest) {
     // Record the charge keyed by requestId so /api/video-status (or the
     // reconciliation sweep) can refund it if the async job later fails or times
     // out. model/mode let the sweep re-check the right FAL endpoint.
-    await recordCharge(result.requestId, charge.userId, cost, "video", {
+    const recorded = await recordCharge(result.requestId, charge.userId, cost, "video", {
       model: result.model,
       mode: result.mode,
     })
+    // The FAL job is already submitted, so if the charge couldn't be recorded
+    // it would be untracked and unrefundable — compensate now so the user's
+    // credits are never silently lost.
+    if (!recorded) {
+      console.error(
+        "[generate-video] CHARGE_NOT_RECORDED — compensating to avoid lost credits",
+        { requestId: result.requestId, userId: charge.userId, cost },
+      )
+      await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "video")
+    }
 
     return NextResponse.json({
       requestId: result.requestId,

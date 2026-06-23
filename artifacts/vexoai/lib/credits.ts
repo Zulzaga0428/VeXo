@@ -76,38 +76,64 @@ export type ChargeKind = "video" | "avatar"
 // helpers are best-effort: a missing table or transient error is logged and
 // never breaks the request/poll path.
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 // Record a charge against an async job's requestId so it can be refunded later.
 // `meta.model`/`meta.mode` (b_roll only) let the reconciliation sweep re-check
 // the job on the correct FAL endpoint when the user stopped polling.
+//
+// Returns `true` once the charge row is persisted. Returns `false` if it could
+// NOT be recorded after retries — the caller MUST then compensate (see
+// compensateUnrecordedCharge), otherwise the user is charged for a job that no
+// refund path can ever recover (no row to refund).
 export async function recordCharge(
   requestId: string,
   userId: string,
   cost: number,
   kind: ChargeKind,
   meta?: { model?: string; mode?: string },
-) {
+): Promise<boolean> {
+  const row: Record<string, unknown> = {
+    request_id: requestId,
+    user_id: userId,
+    cost,
+    kind,
+  }
+  if (meta?.model) row.model = meta.model
+  if (meta?.mode) row.mode = meta.mode
+
   try {
     const admin = createAdminClient()
-    const row: Record<string, unknown> = {
-      request_id: requestId,
-      user_id: userId,
-      cost,
-      kind,
-    }
-    if (meta?.model) row.model = meta.model
-    if (meta?.mode) row.mode = meta.mode
+    // upsert keyed by the request_id PK so a retry (or a duplicate submit) is an
+    // idempotent no-op instead of a PK conflict. This is what makes retries and
+    // the compensation path safe: a committed-but-lost-response insert becomes a
+    // successful no-op on the next attempt rather than a false failure.
+    const attempt = () =>
+      admin
+        .from("generation_charges")
+        .upsert(row, { onConflict: "request_id", ignoreDuplicates: true })
 
-    let { error } = await admin.from("generation_charges").insert(row)
+    let { error } = await attempt()
     // Tolerate a DB still on the pre-reconciliation schema (no model/mode
     // columns) — retry without them so the charge is still recorded/refundable.
     if (error && (row.model || row.mode) && /column/i.test(error.message)) {
       delete row.model
       delete row.mode
-      ;({ error } = await admin.from("generation_charges").insert(row))
+      ;({ error } = await attempt())
     }
-    if (error) console.error("[credits] recordCharge failed:", error.message)
+    // Retry transient failures a couple of times before giving up.
+    for (let i = 0; error && i < 2; i++) {
+      await sleep(200 * (i + 1))
+      ;({ error } = await attempt())
+    }
+    if (error) {
+      console.error("[credits] recordCharge failed:", error.message)
+      return false
+    }
+    return true
   } catch (e) {
     console.error("[credits] recordCharge error:", e)
+    return false
   }
 }
 
@@ -147,6 +173,44 @@ export async function settleCharge(requestId: string): Promise<number> {
     return (data as number) ?? 0
   } catch (e) {
     console.error("[credits] settleCharge error:", e)
+    return 0
+  }
+}
+
+// Billing safety net for when a job was submitted (the user is already charged)
+// but its charge row could NOT be persisted by recordCharge. Without a row,
+// neither the status poll nor the reconciliation sweep can ever refund the
+// charge, so the credits would be silently lost. Credit the user back here.
+//
+// Backed by the SECURITY DEFINER `compensate_unrecorded_charge` RPC, which does
+// the credit-back ATOMICALLY and only when no row already exists for the
+// requestId (ON CONFLICT DO NOTHING). That single guard makes this both
+// double-refund-safe (a pending row that actually landed is left for the
+// poll/sweep to own) and idempotent (a repeat call returns 0). The non-zero
+// return value therefore means the credit really was applied — we never claim a
+// refund that didn't happen. Returns the credits restored (0 if the RPC errored
+// or a row already existed — logged loudly so it can be monitored).
+export async function compensateUnrecordedCharge(
+  requestId: string,
+  userId: string,
+  cost: number,
+  kind: ChargeKind,
+): Promise<number> {
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin.rpc("compensate_unrecorded_charge", {
+      p_request_id: requestId,
+      p_user_id: userId,
+      p_cost: cost,
+      p_kind: kind,
+    })
+    if (error) {
+      console.error("[credits] compensateUnrecordedCharge rpc error:", error.message)
+      return 0
+    }
+    return (data as number) ?? 0
+  } catch (e) {
+    console.error("[credits] compensateUnrecordedCharge error:", e)
     return 0
   }
 }

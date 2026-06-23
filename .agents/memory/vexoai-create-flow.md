@@ -85,6 +85,32 @@ forever. A server-side sweep closes that gap so refunds are truly automatic.
   `settled` when rows>0); rows a concurrent poll already resolved fall into
   `alreadyResolved`, so the ops summary stays truthful.
 
+## Rule: a charge that can't be recorded must compensate, never go silent
+**Why:** every refund path (poll + sweep) keys off a `generation_charges` row.
+If `recordCharge` fails AFTER a successful FAL submit, the user is charged but no
+row exists, so nothing can ever refund it — credits are silently lost.
+**How to apply:**
+- `recordCharge` returns `boolean` and is idempotent: it `upsert`s on the
+  `request_id` PK (`ignoreDuplicates`) with a couple of transient retries, so a
+  committed-but-lost-response becomes a successful no-op on retry rather than a
+  false failure (this is what keeps compensation double-refund-safe).
+- When `recordCharge` returns `false`, both submit routes call
+  `compensateUnrecordedCharge(requestId, userId, cost, kind)` and log a greppable
+  `CHARGE_NOT_RECORDED` line.
+- Compensation goes through the `compensate_unrecorded_charge` SECURITY DEFINER
+  RPC — NOT a direct profile write. It atomically inserts a row as already-
+  `refunded` and credits the user, guarded by `ON CONFLICT (request_id) DO
+  NOTHING`. That one guard is the whole correctness argument: if a pending row
+  actually landed, the insert no-ops and credits nothing (the poll/sweep owns
+  that row → no double-refund); if no row exists it credits exactly once; a
+  repeat call returns 0 (idempotent). A non-zero return therefore means the
+  credit truly applied — never re-credit via a non-atomic read-modify-write, and
+  never treat refundCharge's `0` (which also means "RPC error") as "no row".
+- Net effect: the user is credited back exactly once. If the untracked job later
+  succeeds the user simply keeps the credits (acceptable — erring toward user).
+  If the RPC itself errors, compensation returns 0 and logs (rare DB outage,
+  unrecoverable here — do not silently claim a refund happened).
+
 ## Rule: client generation must be resumable (no double-charge on retry)
 The browser orchestrator
 (`use-video-generation`) caches each succeeded scene's output keyed by a

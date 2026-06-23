@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAvatarVideo } from "@/lib/fal-video"
-import { chargeCredits, refundCredits, recordCharge, CREDIT_COST } from "@/lib/credits"
+import {
+  chargeCredits,
+  refundCredits,
+  recordCharge,
+  compensateUnrecordedCharge,
+  CREDIT_COST,
+} from "@/lib/credits"
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,7 +43,15 @@ export async function POST(request: NextRequest) {
 
     // Record the charge keyed by requestId so /api/avatar-status can refund it
     // if the async job later fails or times out.
-    await recordCharge(result.requestId, charge.userId, cost, "avatar")
+    const recorded = await recordCharge(result.requestId, charge.userId, cost, "avatar")
+    // Untracked submitted job -> compensate so the user's credits aren't lost.
+    if (!recorded) {
+      console.error(
+        "[avatar-video] CHARGE_NOT_RECORDED — compensating to avoid lost credits",
+        { requestId: result.requestId, userId: charge.userId, cost },
+      )
+      await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "avatar")
+    }
 
     return NextResponse.json({ requestId: result.requestId })
   } catch (error) {

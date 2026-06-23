@@ -97,8 +97,56 @@ begin
 end;
 $$;
 
+-- Compensate a charge that could NOT be recorded by recordCharge after a
+-- successful FAL submit. In that case the user was already debited but no row
+-- was written, so neither the status poll nor the reconciliation sweep could
+-- ever refund it. This atomically records the charge as already-'refunded' AND
+-- credits the user back — but ONLY if no row already exists for this requestId.
+--
+-- Double-refund-safe by construction: ON CONFLICT (request_id) DO NOTHING means
+-- that if a row DID land (pending/settled/refunded) we credit nothing and leave
+-- the normal poll/sweep to own it. Idempotent: a repeat call conflicts and
+-- returns 0. Atomic: the insert + credit happen in one transaction, so a caller
+-- that gets a non-zero result KNOWS the credit was applied. Returns the credits
+-- restored (cost on the first compensation, 0 otherwise).
+create or replace function public.compensate_unrecorded_charge(
+  p_request_id text,
+  p_user_id    uuid,
+  p_cost       integer,
+  p_kind       text default 'video'
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_inserted integer;
+begin
+  insert into public.generation_charges
+    (request_id, user_id, cost, kind, status, resolved_at)
+  values
+    (p_request_id, p_user_id, p_cost, coalesce(p_kind, 'video'), 'refunded', now())
+  on conflict (request_id) do nothing;
+
+  get diagnostics v_inserted = row_count;
+
+  if v_inserted = 0 then
+    return 0;  -- a row already exists -> poll/sweep owns it; do NOT double-credit
+  end if;
+
+  update public.profiles
+     set credits = coalesce(credits, 0) + p_cost
+   where id = p_user_id;
+
+  return coalesce(p_cost, 0);
+end;
+$$;
+
 -- Lock the functions down to the server only.
 revoke all on function public.refund_generation_charge(text) from public, anon, authenticated;
 revoke all on function public.settle_generation_charge(text) from public, anon, authenticated;
+revoke all on function public.compensate_unrecorded_charge(text, uuid, integer, text) from public, anon, authenticated;
 grant execute on function public.refund_generation_charge(text) to service_role;
 grant execute on function public.settle_generation_charge(text) to service_role;
+grant execute on function public.compensate_unrecorded_charge(text, uuid, integer, text) to service_role;

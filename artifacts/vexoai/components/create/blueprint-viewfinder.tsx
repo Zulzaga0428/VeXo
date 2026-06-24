@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Clock,
   Coins,
+  Film,
   Globe,
   Minus,
   Pencil,
@@ -175,6 +176,9 @@ button.vx-slot{width:100%;text-align:left;color:inherit}
 .vx-panel{margin-top:12px;padding:14px;border-radius:13px;background:var(--inset);border:1px solid var(--line)}
 .vx-chip.vx-act{cursor:pointer;transition:border-color .15s ease,color .15s ease,background .15s ease}
 .vx-chip.vx-act:hover{border-color:var(--line-strong);color:var(--text);background:var(--inset)}
+.vx-chip.vx-prem{border-color:rgba(243,178,121,0.5);color:var(--tungsten);background:rgba(243,178,121,0.08)}
+.vx-chip.vx-prem svg{opacity:1;color:var(--tungsten)}
+.vx-chip.vx-prem:hover{border-color:var(--tungsten);background:rgba(243,178,121,0.14)}
 .vx-step{display:inline-flex;align-items:center;border-radius:9px;overflow:hidden;
   border:1px solid var(--line);background:var(--surface-2);font-family:'JetBrains Mono',monospace}
 .vx-step button{width:28px;height:30px;border:none;background:transparent;color:var(--muted);
@@ -277,6 +281,9 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
   const cycleOrientation = () => {
     const i = ORIENTATION_ORDER.indexOf(blueprint.orientation)
     patch({ orientation: ORIENTATION_ORDER[(i + 1) % ORIENTATION_ORDER.length] })
+  }
+  const cycleModel = () => {
+    patch({ model: blueprint.model === "standard" ? "veo3" : "standard" })
   }
 
   const allCharacters: Character[] = useMemo(
@@ -491,6 +498,15 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
                   >
                     <RectangleHorizontal />
                     {blueprint.orientation}
+                  </button>
+                  <button
+                    type="button"
+                    className={blueprint.model === "veo3" ? "vx-chip vx-act vx-prem" : "vx-chip vx-act"}
+                    onClick={cycleModel}
+                    title={t("Видео чанар солих", "Change video quality")}
+                  >
+                    <Film />
+                    {blueprint.model === "veo3" ? t("Кино чанар", "Cinematic") : t("Энгийн", "Standard")}
                   </button>
                   {scene.type === "a_roll" ? (
                     <button

@@ -14,9 +14,11 @@ import {
   Minus,
   Plus,
   RectangleHorizontal,
+  Trash2,
   User,
 } from "lucide-react"
 import {
+  newSceneId,
   recomputeDuration,
   type BlueprintScene,
   type Character,
@@ -114,6 +116,15 @@ const CSS = `
 .vx-scene-no::before{content:'';width:5px;height:5px;background:var(--teal);border-radius:1px;box-shadow:0 0 8px var(--teal)}
 .vx-scene-type{color:var(--faint)}
 .vx-scene-tc{margin-left:auto;color:var(--muted)}
+.vx-scene-del{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+  border-radius:7px;background:transparent;border:1px solid transparent;color:var(--faint);cursor:pointer;transition:all .15s}
+.vx-scene-del:hover{color:#ff6b6b;border-color:rgba(255,107,107,0.3);background:rgba(255,107,107,0.08)}
+.vx-scene-del svg{width:14px;height:14px}
+.vx-add-scene{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;height:44px;
+  margin:16px 0 6px;border-radius:12px;background:transparent;border:1px dashed var(--line-strong);color:var(--muted);
+  font-family:'Manrope',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s}
+.vx-add-scene:hover{color:var(--teal);border-color:var(--teal-deep);background:rgba(45,212,191,0.05)}
+.vx-add-scene svg{width:15px;height:15px}
 .vx-row{display:grid;grid-template-columns:1fr 1fr;gap:26px;padding:14px 0 4px}
 .vx-eye{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.16em;
   text-transform:uppercase;color:var(--teal-deep);margin-bottom:9px}
@@ -292,6 +303,30 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
     onChange({ ...blueprint, scenes, durationSec: recomputeDuration({ ...blueprint, scenes }) })
   }
 
+  // Scene add/remove — lets users trim a short ad down to fewer (cheaper) scenes
+  // or extend it. Keep at least one scene and cap at MAX_SCENES.
+  const MAX_SCENES = 6
+  const addScene = () => {
+    if (blueprint.scenes.length >= MAX_SCENES) return
+    const scene: BlueprintScene = {
+      id: newSceneId(),
+      type: "b_roll",
+      durationSec: 6,
+      script: "",
+      visualPrompt: "",
+      status: "idle",
+      progress: 0,
+    }
+    const scenes = [...blueprint.scenes, scene]
+    onChange({ ...blueprint, scenes, durationSec: recomputeDuration({ ...blueprint, scenes }) })
+  }
+  const removeScene = (id: string) => {
+    if (blueprint.scenes.length <= 1) return
+    setOpenSlot(null)
+    const scenes = blueprint.scenes.filter((s) => s.id !== id)
+    onChange({ ...blueprint, scenes, durationSec: recomputeDuration({ ...blueprint, scenes }) })
+  }
+
   const ORIENTATION_ORDER: Orientation[] = ["9:16", "16:9", "1:1"]
   const cycleOrientation = () => {
     const i = ORIENTATION_ORDER.indexOf(blueprint.orientation)
@@ -387,6 +422,16 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
                     {scene.type === "a_roll" ? t("ТАНИЛЦУУЛАГЧ", "PRESENTER") : t("ДҮРСЛЭЛ", "B-ROLL")}
                   </span>
                   <span className="vx-scene-tc">{timecode(scene.durationSec)}</span>
+                  {blueprint.scenes.length > 1 && (
+                    <button
+                      type="button"
+                      className="vx-scene-del"
+                      title={t("Хэсэг устгах", "Remove scene")}
+                      onClick={() => removeScene(scene.id)}
+                    >
+                      <Trash2 />
+                    </button>
+                  )}
                 </div>
 
                 <div className="vx-row">
@@ -619,6 +664,12 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
               </div>
             )
           })}
+          {blueprint.scenes.length < MAX_SCENES && (
+            <button type="button" className="vx-add-scene" onClick={addScene}>
+              <Plus />
+              {t("Хэсэг нэмэх", "Add scene")}
+            </button>
+          )}
         </div>
 
         {/* Footer summary */}

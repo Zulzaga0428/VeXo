@@ -2,6 +2,8 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react";
+import { newSceneId, recomputeDuration } from "@/lib/blueprint";
+import { uploadImage, generateImage } from "@/lib/create-api-client";
 
 // VexoAI — multi-scene Blueprint editor.
 // Each scene is its own full block (Script, Style, Avatar, Voice, duration, ratio).
@@ -206,14 +208,55 @@ const RatioGlyph = ({ ratio }) => {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 12, height: 12 }}><rect x={(24 - m[0]) / 2} y={(24 - m[1]) / 2} width={m[0]} height={m[1]} rx="1.5" /></svg>;
 };
 
-export default function BlueprintCard() {
-  const [scenes, setScenes] = useState([newScene(true)]);
+const FALLBACK_VOICES = VOICES;
+
+export default function BlueprintCard({ blueprint, onChange, onGenerate, generating, locale = "mn" }) {
+  const bp = blueprint;
+  const tr = (mn, en) => (locale === "en" ? en : mn);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [voices, setVoices] = useState(FALLBACK_VOICES);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [menu, setMenu] = useState(null);        // null | {i, field}
   const [mode, setMode] = useState("idle");
   const [pct, setPct] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [playPct, setPlayPct] = useState(0);
   const fileRef = useRef(null), uploadIdx = useRef(0), t1 = useRef(null), t2 = useRef(null);
+
+  // Load the real premium camb.ai studio voices (same source as VoicePicker).
+  useEffect(() => {
+    let active = true;
+    fetch("/api/camb-voices")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active || !Array.isArray(d?.voices) || d.voices.length === 0) return;
+        setVoices(
+          d.voices.map((cv) => ({
+            name: cv.name,
+            tag: `${cv.gender === "male" ? tr("эрэгтэй", "male") : tr("эмэгтэй", "female")} · ${tr("студи", "studio")}`,
+            voiceId: `camb:${cv.id}`,
+            lang: cv.language || "mn",
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // -- Derive the card view-model from the real VideoBlueprint --
+  const voiceIdx = Math.max(0, voices.findIndex((v) => v.voiceId === bp.voice?.voiceId));
+  const avatarVM = bp.avatar?.imageUrl
+    ? { type: bp.avatar.type, label: bp.avatar.label || tr("Сонгосон зураг", "Selected image") }
+    : null;
+  const scenes = bp.scenes.map((s) => ({
+    script: s.script,
+    style: s.visualPrompt,
+    avatar: avatarVM,
+    voice: voiceIdx,
+    duration: s.durationSec,
+    ratio: bp.orientation,
+    collapsed: collapsed.has(s.id),
+  }));
 
   const N = scenes.length;
   const totalDur = scenes.reduce((a, s) => a + s.duration, 0);
@@ -238,15 +281,76 @@ export default function BlueprintCard() {
     return () => clearInterval(t2.current);
   }, [playing, totalDur]);
 
-  const start = () => { setPct(0); setMode("rendering"); };
-  const reset = () => { setPct(0); setPlayPct(0); setPlaying(false); setMode("idle"); };
-  const setField = (i, k, v) => setScenes((s) => s.map((sc, idx) => idx === i ? { ...sc, [k]: v } : sc));
-  const addScene = () => setScenes((s) => [...s.map((sc) => ({ ...sc, collapsed: true })), newScene(false)]);
-  const delScene = (i, e) => { e.stopPropagation(); setScenes((s) => s.length > 1 ? s.filter((_, idx) => idx !== i) : s); };
-  const openUpload = (i) => { uploadIdx.current = i; fileRef.current && fileRef.current.click(); };
-  const onFile = () => { setField(uploadIdx.current, "avatar", { type: "upload", label: "Оруулсан зураг" }); setMenu(null); };
+  // -- Write helpers: every edit flows back into the real VideoBlueprint --
+  const commit = (next) => onChange?.({ ...next, durationSec: recomputeDuration(next) });
+  const patchSceneAt = (i, p) =>
+    commit({ ...bp, scenes: bp.scenes.map((s, idx) => (idx === i ? { ...s, ...p } : s)) });
 
-  const ins = RB[scenes[0].ratio];
+  // Generate -> run the real server-charged pipeline (page swaps to the timeline).
+  const start = () => { onGenerate?.(); };
+  const reset = () => { setPct(0); setPlayPct(0); setPlaying(false); setMode("idle"); };
+
+  const setField = (i, k, v) => {
+    if (k === "collapsed") {
+      const id = bp.scenes[i]?.id;
+      if (!id) return;
+      setCollapsed((prev) => {
+        const nx = new Set(prev);
+        if (v) nx.add(id); else nx.delete(id);
+        return nx;
+      });
+      return;
+    }
+    if (k === "script") return patchSceneAt(i, { script: v });
+    if (k === "style") return patchSceneAt(i, { visualPrompt: v });
+    if (k === "duration") return patchSceneAt(i, { durationSec: v });
+    if (k === "ratio") return commit({ ...bp, orientation: v });
+    if (k === "avatar") {
+      if (!v) return onChange?.({ ...bp, avatar: { type: "none" } });
+      return onChange?.({ ...bp, avatar: v });
+    }
+    if (k === "voice") {
+      const sel = voices[v];
+      if (sel?.voiceId) onChange?.({ ...bp, voice: { voiceId: sel.voiceId, lang: sel.lang, name: sel.name } });
+      return;
+    }
+  };
+
+  const addScene = () => {
+    const scene = { id: newSceneId(), type: "a_roll", durationSec: 6, script: "", visualPrompt: DEFAULT_STYLE, status: "idle", progress: 0 };
+    setCollapsed((prev) => { const nx = new Set(prev); bp.scenes.forEach((s) => nx.add(s.id)); return nx; });
+    commit({ ...bp, scenes: [...bp.scenes, scene] });
+  };
+  const delScene = (i, e) => {
+    e.stopPropagation();
+    if (bp.scenes.length <= 1) return;
+    commit({ ...bp, scenes: bp.scenes.filter((_, idx) => idx !== i) });
+  };
+
+  const openUpload = (i) => { uploadIdx.current = i; fileRef.current && fileRef.current.click(); };
+  const onFile = async (e) => {
+    const file = e?.target?.files?.[0];
+    if (e?.target) e.target.value = "";
+    setMenu(null);
+    if (!file) return;
+    setAvatarBusy(true);
+    const res = await uploadImage(file);
+    setAvatarBusy(false);
+    if (res?.ok) onChange?.({ ...bp, avatar: { type: "upload", imageUrl: res.data.url, label: file.name } });
+  };
+  const aiAvatar = async (i) => {
+    setMenu(null);
+    const sc = bp.scenes[i];
+    const prompt = (sc?.visualPrompt || sc?.script || "professional presenter, clean studio background").trim();
+    setAvatarBusy(true);
+    const res = await generateImage({ prompt, aspectRatio: bp.orientation, mode: "photo" });
+    setAvatarBusy(false);
+    if (res?.ok && res.data.images?.[0]) {
+      onChange?.({ ...bp, avatar: { type: "generated", imageUrl: res.data.images[0].url, label: prompt.slice(0, 40) } });
+    }
+  };
+
+  const ins = RB[scenes[0]?.ratio] || RB["16:9"];
   const brk = { tl: { top: ins.y, left: ins.x }, tr: { top: ins.y, right: ins.x }, bl: { bottom: ins.y, left: ins.x }, brr: { bottom: ins.y, right: ins.x } };
 
   return (
@@ -272,8 +376,8 @@ export default function BlueprintCard() {
                 <div className="vx-vig" />
                 <div className="vx-br vx-tl" style={brk.tl} /><div className="vx-br vx-tr" style={brk.tr} /><div className="vx-br vx-bl" style={brk.bl} /><div className="vx-br vx-brr" style={brk.brr} />
                 <div className="vx-slate">PROJECT · {String(N).padStart(2, "0")} SCENE{N > 1 ? "S" : ""}</div>
-                <h3 className="vx-title" style={{ fontSize: scenes[0].ratio === "16:9" ? 46 : 36 }}>Бүтээгдэхүүн<br />танилцуулга</h3>
-                <div className="vx-ratio">{scenes[0].ratio} — {RATIO_LBL[scenes[0].ratio]}</div>
+                <h3 className="vx-title" style={{ fontSize: scenes[0]?.ratio === "16:9" ? 46 : 36 }}>Бүтээгдэхүүн<br />танилцуулга</h3>
+                <div className="vx-ratio">{scenes[0]?.ratio} — {RATIO_LBL[scenes[0]?.ratio]}</div>
                 <div className="vx-tc">{fmt(100, totalDur)}</div>
               </div>
 
@@ -314,18 +418,18 @@ export default function BlueprintCard() {
                                 {menu && menu.i === i && menu.field === "avatar" && (
                                   <div className="vx-pop" onClick={(e) => e.stopPropagation()}>
                                     <div className="vx-pi" onClick={() => openUpload(i)}><Svg d={I.upload} /><span className="vx-nm">Зураг оруулах</span><span className="vx-ptag">upload</span></div>
-                                    <div className="vx-pi" onClick={() => { setField(i, "avatar", { type: "ai", label: "AI аватар" }); setMenu(null); }}><Svg d={I.sparkle} /><span className="vx-nm">AI-аар үүсгэх</span><span className="vx-ptag">AI</span></div>
+                                    <div className="vx-pi" onClick={() => aiAvatar(i)}><Svg d={I.sparkle} /><span className="vx-nm">AI-аар үүсгэх</span><span className="vx-ptag">AI</span></div>
                                   </div>
                                 )}
                               </button>
 
                               <button className="vx-slot sel" onClick={() => setMenu(menu && menu.i === i && menu.field === "voice" ? null : { i, field: "voice" })}>
                                 <div className="vx-av on"><Svg d={I.wave} s={{ width: 18, height: 18 }} /></div>
-                                <div className="vx-meta"><span className="vx-k">Voice — CAMB.AI</span><span className="vx-v on">{VOICES[sc.voice].name} · {VOICES[sc.voice].tag.split(" · ")[0]}</span></div>
+                                <div className="vx-meta"><span className="vx-k">Voice — CAMB.AI</span><span className="vx-v on">{voices[sc.voice]?.name} · {voices[sc.voice]?.tag.split(" · ")[0]}</span></div>
                                 <span className="vx-chev"><Svg d={I.chev} s={{ width: 15, height: 15 }} /></span>
                                 {menu && menu.i === i && menu.field === "voice" && (
                                   <div className="vx-pop" onClick={(e) => e.stopPropagation()}>
-                                    {VOICES.map((v, vi) => (
+                                    {voices.map((v, vi) => (
                                       <div key={vi} className={`vx-pi${vi === sc.voice ? " on" : ""}`} onClick={() => { setField(i, "voice", vi); setMenu(null); }}>
                                         <span className="vx-nm">{v.name}</span><span className="vx-ptag">{v.tag}</span>
                                       </div>
@@ -391,7 +495,7 @@ export default function BlueprintCard() {
                 <div className="vx-grid" /><div className="vx-rbr vx-tl" /><div className="vx-rbr vx-tr" /><div className="vx-rbr vx-bl" /><div className="vx-rbr vx-brr" />
                 <VLogo done />
                 <div className="vx-done-lbl">{playing ? "Тоглуулж байна" : "Бэлэн боллоо"}</div>
-                <div className="vx-done-sub">{playing ? fmt(playPct, totalDur) : `${totalDur}s · ${N} scene · ${scenes[0].ratio}`}</div>
+                <div className="vx-done-sub">{playing ? fmt(playPct, totalDur) : `${totalDur}s · ${N} scene · ${scenes[0]?.ratio}`}</div>
               </div>
               <div className="vx-prog">
                 <div className="vx-bar"><div className="vx-fill" style={{ width: `${playing ? playPct : 100}%` }} /></div>

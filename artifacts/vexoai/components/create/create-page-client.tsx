@@ -214,7 +214,13 @@ export function CreatePageClient() {
               )
             ) : blueprint ? (
               <div className="h-full overflow-y-auto">
-                <BlueprintCard />
+                <BlueprintCard
+                  locale={locale}
+                  blueprint={blueprint}
+                  generating={gen.phase === "running"}
+                  onChange={setBlueprint}
+                  onGenerate={handleGenerate}
+                />
               </div>
             ) : (
               <EmptyState locale={locale} />

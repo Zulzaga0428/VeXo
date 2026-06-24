@@ -34,7 +34,7 @@ export function ArtifactsPanel({
   // Collapsed rail — a narrow strip with just the expand control and view icons.
   if (collapsed) {
     return (
-      <div className="flex h-full w-full flex-col items-center gap-1 bg-background py-3">
+      <div className="flex h-full w-full flex-col items-center gap-1 py-3">
         {onToggleCollapsed && (
           <button
             onClick={onToggleCollapsed}
@@ -81,7 +81,7 @@ export function ArtifactsPanel({
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full flex-col">
       <div className="flex h-12 items-center gap-2 border-b border-border px-4">
         <Layers className="h-4 w-4 text-accent" />
         <span className="text-sm font-medium">{t("Бүтээл", "Creations")}</span>

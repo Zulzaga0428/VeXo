@@ -51,7 +51,7 @@ export function ChatPanel({
       : ["A short coffee shop ad", "An app launch teaser", "A personal intro message"]
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full flex-col">
       <div className="flex h-12 items-center gap-2 border-b border-border px-4">
         <span className="text-sm font-medium">{t("Найруулагч", "Director")}</span>
         {onNewVideo && (

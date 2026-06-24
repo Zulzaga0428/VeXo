@@ -97,6 +97,9 @@ export async function streamBlueprint(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
+  // Track resolution so we can emit a fallback error if the stream closes
+  // without a "done" or "error" event (e.g. server crash mid-stream).
+  let resolved = false
 
   try {
     while (true) {
@@ -126,8 +129,10 @@ export async function streamBlueprint(
         if (eventType === "status" && typeof payload.message === "string") {
           callbacks.onStatus(payload.message)
         } else if (eventType === "done") {
+          resolved = true
           callbacks.onDone(payload as { reply: string; blueprint: RawBlueprint; chatRemaining?: number })
         } else if (eventType === "error") {
+          resolved = true
           callbacks.onError(
             typeof payload.message === "string" ? payload.message : "Unknown error",
             typeof payload.statusCode === "number" ? payload.statusCode : undefined,
@@ -137,6 +142,11 @@ export async function streamBlueprint(
     }
   } finally {
     reader.releaseLock()
+    // Guard against silent failures: if the stream ended without "done" or
+    // "error", surface a generic error so the UI does not freeze silently.
+    if (!resolved) {
+      callbacks.onError("Төлөвлөгөө гаргахад алдаа гарлаа. Дахин оролдоно уу.")
+    }
   }
 }
 

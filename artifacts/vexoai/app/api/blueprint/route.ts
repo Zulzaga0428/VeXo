@@ -109,14 +109,21 @@ function buildSystemPrompt(locale: "mn" | "en", model: "standard" | "veo3"): str
 ${engine}
 ${SCENE_GUIDE_MN}
 
+БАГАЖ ХЭРЭГСЭЛ (tools):
+Дараах дарааллаар ашигла (нэг зэрэг дуудаж болно):
+1. get_voices() — бодит хоолойнуудын жагсаалт авна. reply дотор хоолойн нэр дурдах.
+2. estimate_credits() — нийт кредит тооцоолно. reply дотор "X кредит шаардана" гэж хэл.
+3. validate_scene() — scene БҮРТ зэрэг дуудна. Олдсон алдааг засна.
+Эдгээр tool-уудыг дуусгасны ДАРАА л JSON буцаа.
+
 ДҮРЭМ:
 - 1-5 scene. Scene бүр 5-12 секунд.
 - visualPrompt үргэлж АНГЛИАР (видео модель англиар ажилладаг).
 - script (яриа) МОНГОЛоор.
-- "reply" талбарт хэрэглэгчид зориулсан 1-2 өгүүлбэр найрсаг хариу (монголоор) — юу төлөвлөснөө товч хэл.
+- "reply" талбарт хэрэглэгчид зориулсан 1-2 өгүүлбэр найрсаг хариу (монголоор) — хоолойн нэр, кредит, scene тоог дурдаарай.
 - orientation: богино/нийгмийн сүлжээ бол "9:16", өргөн/YouTube бол "16:9".
 
-Зөвхөн дараах JSON буцаа, өөр текст бүү нэм:
+Дараах JSON БҮТЦИЙГ л буцаа (tools дуусгасны дараа):
 {"reply":"...","blueprint":{"title":"...","language":"mn","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":8,"script":"...","visualPrompt":"..."}]}}`
   }
 
@@ -127,14 +134,21 @@ MOST IMPORTANT: FOLLOW the user's idea. Don't invent extra ads or CTAs. If the i
 ${engine}
 ${SCENE_GUIDE_EN}
 
+TOOLS (call these before writing the blueprint):
+Use them in this order (may call in parallel when possible):
+1. get_voices() — get the real list of Mongolian voice actors; mention the chosen voice in the reply.
+2. estimate_credits() — calculate total credits; say "X credits required" in the reply.
+3. validate_scene() — call for EVERY scene simultaneously; fix all reported issues before finalising.
+Only write the JSON after ALL tools are done.
+
 RULES:
 - 1-5 scenes. Each 5-12 seconds.
 - visualPrompt always in ENGLISH (the video model is English-driven).
 - script (spoken line) in the user's language.
-- "reply" is a friendly 1-2 sentence message to the user summarizing the plan.
+- "reply" is a friendly 1-2 sentence message mentioning the chosen voice, credit cost, and scene count.
 - orientation: "9:16" for short/social, "16:9" for wide/YouTube.
 
-Return ONLY this JSON, no other text:
+After tools are done, return ONLY this JSON structure:
 {"reply":"...","blueprint":{"title":"...","language":"en","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":8,"script":"...","visualPrompt":"..."}]}}`
 }
 
@@ -463,7 +477,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     // Handles synchronous errors before the stream is created (body parse, auth, etc.)
-    console.error("Blueprint error:", error)
+    void error
     const status = (error as Record<string, unknown>)?.status
     const isAnthropicDown = typeof status === "number" && status >= 500 && status < 600
     const message =

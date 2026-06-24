@@ -1,0 +1,18 @@
+ Hook дотор — statusSteps хуримтлуулах (string хувиргасан statusText)
+
+
+// useState
+const [statusSteps, setStatusSteps] = useState<string[]>([])
+
+// buildPlan эхлэхэд цэвэрлэ
+setStatusSteps([])
+
+// onStatus callback-д PUSH хий (override биш!)
+onStatus: (msg) => setStatusSteps((prev) => [...prev, msg]),
+
+// buildPlan дуусахад цэвэрлэ
+setThinking(false)
+setStatusSteps([])   // ← энэ мөр нэмсэн (reset)
+
+// return-д буцаа
+return { messages, thinking, statusSteps, ... }

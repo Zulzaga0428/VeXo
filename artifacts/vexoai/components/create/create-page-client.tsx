@@ -190,7 +190,13 @@ export function CreatePageClient() {
           </div>
 
           {/* Preview / editor */}
-          <div className="min-w-0 flex-1 overflow-hidden">
+          <div
+            className="min-w-0 flex-1 overflow-hidden"
+            style={{
+              background:
+                "radial-gradient(1200px 600px at 80% -10%,rgba(45,212,191,0.06),transparent 60%),radial-gradient(900px 500px at 10% 110%,rgba(184,13,13,0.045),transparent 55%),#08090C",
+            }}
+          >
             {view === "generation" && genBlueprint ? (
               gen.phase === "done" && gen.finalUrl ? (
                 <VideoResult

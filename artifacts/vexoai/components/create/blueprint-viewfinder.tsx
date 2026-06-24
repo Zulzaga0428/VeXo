@@ -120,6 +120,13 @@ const CSS = `
   text-transform:uppercase;color:var(--teal-deep);margin-bottom:9px}
 .vx-copy{font-size:13.5px;line-height:1.62;color:#C3C8D0;font-weight:400;margin:0;white-space:pre-wrap}
 .vx-copy.vx-empty{color:var(--faint);font-style:italic}
+.vx-script-p{cursor:text;border-radius:8px;margin:-2px -6px;padding:2px 6px;transition:background .15s}
+.vx-script-p:hover{background:rgba(255,255,255,0.04)}
+.vx-script-edit{width:100%;resize:vertical;min-height:66px;margin-top:2px;padding:9px 11px;border-radius:10px;
+  background:var(--inset);border:1px solid var(--line);color:#C3C8D0;font-size:13.5px;line-height:1.62;
+  font-family:inherit;outline:none}
+.vx-script-edit::placeholder{color:var(--faint)}
+.vx-script-edit:focus{border-color:var(--teal-deep)}
 .vx-cast{padding:14px 0 2px}
 .vx-castgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
 .vx-castgrid.vx-castgrid-1{grid-template-columns:1fr}
@@ -378,12 +385,37 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
                 <div className="vx-row">
                   <div>
                     <div className="vx-eye">{scene.type === "a_roll" ? t("Яриа", "Script") : t("Хадмал", "Voiceover")}</div>
-                    {scene.script.trim() ? (
+                    {scene.type === "a_roll" ? (
+                      openSlot === `${scene.id}:script` ? (
+                        <textarea
+                          className="vx-script-edit"
+                          value={scene.script}
+                          autoFocus
+                          rows={3}
+                          placeholder={t("Хэлүүлэх үгээ энд бичнэ үү…", "Type the words to speak…")}
+                          onChange={(e) => patchScene(scene.id, { script: e.target.value })}
+                          onBlur={() => setOpenSlot(null)}
+                        />
+                      ) : (
+                        <p
+                          className={`vx-copy vx-script-p${scene.script.trim() ? "" : " vx-empty"}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleSlot(`${scene.id}:script`)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              toggleSlot(`${scene.id}:script`)
+                            }
+                          }}
+                        >
+                          {scene.script.trim() || t("Яриа оруулаагүй — бичихээр дарна уу", "No script yet — tap to write")}
+                        </p>
+                      )
+                    ) : scene.script.trim() ? (
                       <p className="vx-copy">{scene.script}</p>
                     ) : (
-                      <p className="vx-copy vx-empty">
-                        {scene.type === "a_roll" ? t("Яриа оруулаагүй", "No script yet") : t("Дуут тайлбаргүй", "Silent footage")}
-                      </p>
+                      <p className="vx-copy vx-empty">{t("Дуут тайлбаргүй", "Silent footage")}</p>
                     )}
                   </div>
                   <div>

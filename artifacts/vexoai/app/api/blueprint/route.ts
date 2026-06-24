@@ -4,6 +4,8 @@ import { bumpChatUsage, DAILY_CHAT_LIMIT } from "@/lib/credits"
 import type { RawBlueprint, VideoBlueprint } from "@/lib/blueprint"
 import { withRetry } from "@/lib/anthropic-retry"
 import { cambListVoices, isCambConfigured } from "@/lib/cambai"
+import { estimateSceneCredits, willStitch } from "@/lib/blueprint-costs"
+import { CREDIT_COST } from "@/lib/credit-costs"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -19,6 +21,37 @@ const GET_VOICES_TOOL: Anthropic.Tool = {
     "Call this ONCE before writing the blueprint so you can reference a real voice " +
     "name in your reply (e.g. 'Нандин эмэгтэй хоолойтой'). Do NOT invent voice names.",
   input_schema: { type: "object" as const, properties: {}, required: [] },
+}
+
+// Step 2 of Agentic Planner: estimate_credits lets Claude calculate the exact
+// credit cost of its proposed plan and mention it in the reply so the user
+// knows what they're approving before hitting Generate.
+const ESTIMATE_CREDITS_TOOL: Anthropic.Tool = {
+  name: "estimate_credits",
+  description:
+    "Calculate the total credit cost for the blueprint you are about to propose. " +
+    "Call this after finalizing the scene list (types + scripts + durations) but " +
+    "BEFORE writing the reply, so you can tell the user the exact credit total.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      model: { type: "string", enum: ["standard", "veo3"], description: "Quality model" },
+      scenes: {
+        type: "array",
+        description: "Proposed scenes",
+        items: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["a_roll", "b_roll"] },
+            script: { type: "string", description: "Spoken text (empty string if none)" },
+            durationSec: { type: "number" },
+          },
+          required: ["type", "script", "durationSec"],
+        },
+      },
+    },
+    required: ["model", "scenes"],
+  },
 }
 
 // The agent turns a plain-language idea into a full, editable Video Plan
@@ -156,48 +189,80 @@ export async function POST(req: NextRequest) {
           model: "claude-sonnet-4-5",
           max_tokens: 3000,
           system: buildSystemPrompt(locale, safeModel),
-          tools: [GET_VOICES_TOOL],
+          tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL],
           messages: msgs,
         }),
       )
 
       if (message.stop_reason !== "tool_use") break
 
-      // Claude wants to call a tool — execute it and feed the result back.
-      const toolBlock = message.content.find(
+      // Claude may call multiple tools in one turn — handle all of them.
+      const toolBlocks = message.content.filter(
         (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
       )
-      if (!toolBlock) break
+      if (toolBlocks.length === 0) break
 
       msgs.push({ role: "assistant", content: message.content })
 
-      if (toolBlock.name === "get_voices") {
-        let voices: Array<{ id: number; name: string; gender: string }> = []
-        if (isCambConfigured()) {
-          try {
-            const all = await cambListVoices()
-            voices = all
-              .filter((v) => v.language === 100)
-              .map((v) => ({
-                id: v.id,
-                name: v.name,
-                gender: v.gender === 1 ? "male" : "female",
-              }))
-          } catch {
-            voices = []
-          }
-        }
-        msgs.push({
-          role: "user",
-          content: [
-            {
-              type: "tool_result",
+      // Build all tool results in parallel then push as one user message.
+      const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+        toolBlocks.map(async (toolBlock) => {
+          if (toolBlock.name === "get_voices") {
+            let voices: Array<{ id: number; name: string; gender: string }> = []
+            if (isCambConfigured()) {
+              try {
+                const all = await cambListVoices()
+                voices = all
+                  .filter((v) => v.language === 100)
+                  .map((v) => ({
+                    id: v.id,
+                    name: v.name,
+                    gender: v.gender === 1 ? "male" : "female",
+                  }))
+              } catch {
+                voices = []
+              }
+            }
+            return {
+              type: "tool_result" as const,
               tool_use_id: toolBlock.id,
               content: JSON.stringify(voices.length ? voices : [{ note: "No voices found" }]),
-            },
-          ],
-        })
-      }
+            }
+          }
+
+          if (toolBlock.name === "estimate_credits") {
+            const input = toolBlock.input as {
+              model?: string
+              scenes?: Array<{ type?: string; script?: string; durationSec?: number }>
+            }
+            const safeScenes = Array.isArray(input.scenes) ? input.scenes : []
+            const bpModel = input.model === "veo3" ? "veo3" : "standard"
+
+            let total = 0
+            const breakdown: Array<{ scene: number; credits: number }> = []
+            safeScenes.forEach((s, idx) => {
+              const cost = estimateSceneCredits(
+                { type: s.type === "b_roll" ? "b_roll" : "a_roll", script: s.script ?? "" } as Parameters<typeof estimateSceneCredits>[0],
+                bpModel,
+              )
+              breakdown.push({ scene: idx + 1, credits: cost })
+              total += cost
+            })
+            if (safeScenes.length > 1) total += CREDIT_COST.stitch
+
+            return {
+              type: "tool_result" as const,
+              tool_use_id: toolBlock.id,
+              content: JSON.stringify({ total, breakdown, stitchIncluded: safeScenes.length > 1 }),
+            }
+          }
+
+          // Unknown tool — return empty result so the loop doesn't stall.
+          return { type: "tool_result" as const, tool_use_id: toolBlock.id, content: "unknown tool" }
+        }),
+      )
+
+      msgs.push({ role: "user", content: toolResults })
     }
 
     const text = message?.content.find((b) => b.type === "text")?.text ?? ""

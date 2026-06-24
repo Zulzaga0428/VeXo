@@ -159,6 +159,7 @@ export function CreatePageClient() {
               locale={locale}
               messages={chat.messages}
               thinking={chat.thinking}
+              statusText={chat.statusText}
               hasBlueprint={!!blueprint}
               onSubmit={handleSubmit}
               onAnswerClarify={handleAnswerClarify}
@@ -240,6 +241,7 @@ export function CreatePageClient() {
             locale={locale}
             messages={chat.messages}
             thinking={chat.thinking}
+            statusText={chat.statusText}
             hasBlueprint={!!blueprint}
             onSubmit={handleSubmit}
             onAnswerClarify={handleAnswerClarify}

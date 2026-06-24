@@ -179,130 +179,194 @@ export async function POST(req: NextRequest) {
           : `Current plan (JSON):\n${JSON.stringify(slim)}\n\nUser's change request: `) + idea.trim()
     }
 
-    // Agentic loop (max 5 turns): Claude thinks → calls tools → thinks again → returns blueprint.
-    // Step 3 of Agentic Planner: extended (interleaved) thinking lets Claude reason
-    // deeply about scene structure and credit trade-offs before producing the blueprint.
-    // budget_tokens controls thinking depth; max_tokens must exceed budget.
-    const THINKING_BUDGET = 8000
+    // Step 4 of Agentic Planner: stream SSE events so the UI can show real-time
+    // status ("Хоолой шалгаж байна…", "Кредит тооцоолж байна…") instead of a
+    // plain spinner. The agentic loop itself is unchanged — only the delivery
+    // mechanism switches from a single JSON response to a ReadableStream.
+    const encoder = new TextEncoder()
+    const chatRemaining = limit.remaining
 
-    const msgs: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userContent }]
-    let message: Anthropic.Beta.BetaMessage | null = null
+    const sseStream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: string, data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+          } catch {
+            // controller already closed — ignore
+          }
+        }
 
-    for (let turn = 0; turn < 5; turn++) {
-      message = await withRetry(() =>
-        anthropic.beta.messages.create({
-          model: "claude-sonnet-4-5",
-          max_tokens: 12000,
-          thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
-          betas: ["interleaved-thinking-2025-05-14"],
-          system: buildSystemPrompt(locale, safeModel),
-          tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL],
-          messages: msgs,
-        }),
-      )
+        try {
+          const THINKING_BUDGET = 8000
+          const msgs: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userContent }]
+          let message: Anthropic.Beta.BetaMessage | null = null
 
-      if (message.stop_reason !== "tool_use") break
+          for (let turn = 0; turn < 5; turn++) {
+            message = await withRetry(() =>
+              anthropic.beta.messages.create({
+                model: "claude-sonnet-4-5",
+                max_tokens: 12000,
+                thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
+                betas: ["interleaved-thinking-2025-05-14"],
+                system: buildSystemPrompt(locale, safeModel),
+                tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL],
+                messages: msgs,
+              }),
+            )
 
-      // Claude may call multiple tools in one turn — handle all of them.
-      const toolBlocks = message.content.filter(
-        (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use",
-      )
-      if (toolBlocks.length === 0) break
+            if (message.stop_reason !== "tool_use") break
 
-      msgs.push({ role: "assistant", content: message.content })
+            const toolBlocks = message.content.filter(
+              (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use",
+            )
+            if (toolBlocks.length === 0) break
 
-      // Build all tool results in parallel then push as one user message.
-      const toolResults: Anthropic.Beta.BetaToolResultBlockParam[] = await Promise.all(
-        toolBlocks.map(async (toolBlock) => {
-          if (toolBlock.name === "get_voices") {
-            let voices: Array<{ id: number; name: string; gender: string }> = []
-            if (isCambConfigured()) {
-              try {
-                const all = await cambListVoices()
-                voices = all
-                  .filter((v) => v.language === 100)
-                  .map((v) => ({
-                    id: v.id,
-                    name: v.name,
-                    gender: v.gender === 1 ? "male" : "female",
-                  }))
-              } catch {
-                voices = []
+            msgs.push({ role: "assistant", content: message.content })
+
+            // Emit a status event for each tool call so the UI can name them.
+            for (const tb of toolBlocks) {
+              if (tb.name === "get_voices") {
+                send("status", {
+                  message: locale === "mn" ? "Монгол хоолойнуудыг шалгаж байна…" : "Checking available voices…",
+                })
+              } else if (tb.name === "estimate_credits") {
+                send("status", {
+                  message: locale === "mn" ? "Кредит тооцоолж байна…" : "Estimating credits…",
+                })
               }
             }
-            return {
-              type: "tool_result" as const,
-              tool_use_id: toolBlock.id,
-              content: JSON.stringify(voices.length ? voices : [{ note: "No voices found" }]),
-            }
+
+            const toolResults: Anthropic.Beta.BetaToolResultBlockParam[] = await Promise.all(
+              toolBlocks.map(async (toolBlock) => {
+                if (toolBlock.name === "get_voices") {
+                  let voices: Array<{ id: number; name: string; gender: string }> = []
+                  if (isCambConfigured()) {
+                    try {
+                      const all = await cambListVoices()
+                      voices = all
+                        .filter((v) => v.language === 100)
+                        .map((v) => ({
+                          id: v.id,
+                          name: v.name,
+                          gender: v.gender === 1 ? "male" : "female",
+                        }))
+                    } catch {
+                      voices = []
+                    }
+                  }
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify(voices.length ? voices : [{ note: "No voices found" }]),
+                  }
+                }
+
+                if (toolBlock.name === "estimate_credits") {
+                  const input = toolBlock.input as {
+                    model?: string
+                    scenes?: Array<{ type?: string; script?: string; durationSec?: number }>
+                  }
+                  const safeScenes = Array.isArray(input.scenes) ? input.scenes : []
+                  const bpModel = input.model === "veo3" ? "veo3" : "standard"
+                  let total = 0
+                  const breakdown: Array<{ scene: number; credits: number }> = []
+                  safeScenes.forEach((s, idx) => {
+                    const cost = estimateSceneCredits(
+                      { type: s.type === "b_roll" ? "b_roll" : "a_roll", script: s.script ?? "" } as Parameters<typeof estimateSceneCredits>[0],
+                      bpModel,
+                    )
+                    breakdown.push({ scene: idx + 1, credits: cost })
+                    total += cost
+                  })
+                  if (safeScenes.length > 1) total += CREDIT_COST.stitch
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify({ total, breakdown, stitchIncluded: safeScenes.length > 1 }),
+                  }
+                }
+
+                return { type: "tool_result" as const, tool_use_id: toolBlock.id, content: "unknown tool" }
+              }),
+            )
+
+            msgs.push({ role: "user", content: toolResults })
           }
 
-          if (toolBlock.name === "estimate_credits") {
-            const input = toolBlock.input as {
-              model?: string
-              scenes?: Array<{ type?: string; script?: string; durationSec?: number }>
-            }
-            const safeScenes = Array.isArray(input.scenes) ? input.scenes : []
-            const bpModel = input.model === "veo3" ? "veo3" : "standard"
-
-            let total = 0
-            const breakdown: Array<{ scene: number; credits: number }> = []
-            safeScenes.forEach((s, idx) => {
-              const cost = estimateSceneCredits(
-                { type: s.type === "b_roll" ? "b_roll" : "a_roll", script: s.script ?? "" } as Parameters<typeof estimateSceneCredits>[0],
-                bpModel,
-              )
-              breakdown.push({ scene: idx + 1, credits: cost })
-              total += cost
+          const textBlock = message?.content.find((b) => b.type === "text")
+          const text = textBlock && "text" in textBlock ? (textBlock.text as string) : ""
+          const jsonMatch = text.match(/\{[\s\S]*\}/)
+          if (!jsonMatch) {
+            send("error", {
+              statusCode: 502,
+              message:
+                locale === "mn"
+                  ? "Төлөвлөгөө гаргахад алдаа гарлаа. Дахин оролдоно уу."
+                  : "Could not build a plan. Please try again.",
             })
-            if (safeScenes.length > 1) total += CREDIT_COST.stitch
-
-            return {
-              type: "tool_result" as const,
-              tool_use_id: toolBlock.id,
-              content: JSON.stringify({ total, breakdown, stitchIncluded: safeScenes.length > 1 }),
-            }
+            return
           }
 
-          // Unknown tool — return empty result so the loop doesn't stall.
-          return { type: "tool_result" as const, tool_use_id: toolBlock.id, content: "unknown tool" }
-        }),
-      )
+          let parsed: { reply?: string; blueprint?: RawBlueprint }
+          try {
+            parsed = JSON.parse(jsonMatch[0])
+          } catch {
+            send("error", {
+              statusCode: 502,
+              message:
+                locale === "mn"
+                  ? "Төлөвлөгөөний формат буруу байна. Дахин оролдоно уу."
+                  : "Could not parse the plan. Please try again.",
+            })
+            return
+          }
 
-      msgs.push({ role: "user", content: toolResults })
-    }
+          if (!parsed.blueprint || !Array.isArray(parsed.blueprint.scenes)) {
+            send("error", {
+              statusCode: 502,
+              message: locale === "mn" ? "Хоосон төлөвлөгөө. Дахин оролдоно уу." : "Empty plan. Please try again.",
+            })
+            return
+          }
 
-    const textBlock = message?.content.find((b) => b.type === "text")
-    const text = textBlock && "text" in textBlock ? (textBlock.text as string) : ""
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "Could not build a plan. Please try again." }, { status: 502 })
-    }
+          const reply =
+            typeof parsed.reply === "string" && parsed.reply.trim()
+              ? parsed.reply.trim()
+              : locale === "mn"
+                ? "Видео төлөвлөгөөг бэлдлээ. Зүүн талд хянаад, засаад үүсгэнэ үү."
+                : "Here's your video plan. Review it, edit anything, then generate."
 
-    let parsed: { reply?: string; blueprint?: RawBlueprint }
-    try {
-      parsed = JSON.parse(jsonMatch[0])
-    } catch {
-      return NextResponse.json({ error: "Could not parse the plan. Please try again." }, { status: 502 })
-    }
+          send("done", { reply, blueprint: parsed.blueprint, chatRemaining })
+        } catch (err) {
+          const status = (err as Record<string, unknown>)?.status
+          const isAnthropicDown = typeof status === "number" && status >= 500 && status < 600
+          send("error", {
+            statusCode: 500,
+            message:
+              locale === "mn"
+                ? isAnthropicDown
+                  ? "AI сервер түр зуур доголдоод байна. Хэдэн минутын дараа дахин оролдоно уу."
+                  : "Төлөвлөгөө гаргахад алдаа гарлаа. Дахин оролдоно уу."
+                : isAnthropicDown
+                  ? "AI service is temporarily unavailable. Please try again in a few minutes."
+                  : "Failed to build plan. Please try again.",
+          })
+        } finally {
+          controller.close()
+        }
+      },
+    })
 
-    if (!parsed.blueprint || !Array.isArray(parsed.blueprint.scenes)) {
-      return NextResponse.json({ error: "Empty plan. Please try again." }, { status: 502 })
-    }
-
-    const reply =
-      typeof parsed.reply === "string" && parsed.reply.trim()
-        ? parsed.reply.trim()
-        : locale === "mn"
-          ? "Видео төлөвлөгөөг бэлдлээ. Зүүн талд хянаад, засаад үүсгэнэ үү."
-          : "Here's your video plan. Review it, edit anything, then generate."
-
-    return NextResponse.json({
-      reply,
-      blueprint: parsed.blueprint,
-      chatRemaining: limit.remaining,
+    return new Response(sseStream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
     })
   } catch (error) {
+    // Handles synchronous errors before the stream is created (body parse, auth, etc.)
     console.error("Blueprint error:", error)
     const status = (error as Record<string, unknown>)?.status
     const isAnthropicDown = typeof status === "number" && status >= 500 && status < 600

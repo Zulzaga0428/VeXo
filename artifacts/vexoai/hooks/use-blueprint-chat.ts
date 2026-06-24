@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { clarifyIdea, requestBlueprint, type ClarifyQuestion } from "@/lib/create-api-client"
+import { clarifyIdea, streamBlueprint, type ClarifyQuestion } from "@/lib/create-api-client"
 import { normalizeBlueprint, type VideoBlueprint } from "@/lib/blueprint"
 
 export interface ChatMessage {
@@ -33,6 +33,7 @@ export function useBlueprintChat(opts: {
   const { locale, getBlueprint, onBlueprint } = opts
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [thinking, setThinking] = useState(false)
+  const [statusText, setStatusText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const pendingIdeaRef = useRef<string | null>(null)
 
@@ -43,36 +44,41 @@ export function useBlueprintChat(opts: {
   const buildPlan = useCallback(
     async (idea: string) => {
       setThinking(true)
+      setStatusText(null)
       setError(null)
       const current = getBlueprint() ?? undefined
-      const res = await requestBlueprint({
-        idea,
-        locale,
-        model: current?.model ?? "standard",
-        currentBlueprint: current,
-      })
+
+      await streamBlueprint(
+        { idea, locale, model: current?.model ?? "standard", currentBlueprint: current },
+        {
+          onStatus: (msg) => setStatusText(msg),
+          onDone: (data) => {
+            const bp = normalizeBlueprint(data.blueprint, {
+              fallbackLanguage: locale,
+              fallbackModel: current?.model ?? "standard",
+              voice: current?.voice,
+              avatar: current?.avatar,
+              keepId: current?.id,
+              version: current ? current.version + 1 : 1,
+            })
+            onBlueprint(bp)
+            push({ role: "assistant", text: data.reply, isPlan: true })
+          },
+          onError: (message, statusCode) => {
+            const msg =
+              statusCode === 429
+                ? locale === "mn"
+                  ? "Өдрийн чатын хязгаарт хүрлээ. Маргааш дахин оролдоно уу."
+                  : "Daily chat limit reached. Try again tomorrow."
+                : message
+            setError(msg)
+            push({ role: "assistant", text: msg })
+          },
+        },
+      )
+
       setThinking(false)
-      if (!res.ok) {
-        const msg =
-          res.status === 429
-            ? locale === "mn"
-              ? "Өдрийн чатын хязгаарт хүрлээ. Маргааш дахин оролдоно уу."
-              : "Daily chat limit reached. Try again tomorrow."
-            : res.error
-        setError(msg)
-        push({ role: "assistant", text: msg })
-        return
-      }
-      const bp = normalizeBlueprint(res.data.blueprint, {
-        fallbackLanguage: locale,
-        fallbackModel: current?.model ?? "standard",
-        voice: current?.voice,
-        avatar: current?.avatar,
-        keepId: current?.id,
-        version: current ? current.version + 1 : 1,
-      })
-      onBlueprint(bp)
-      push({ role: "assistant", text: res.data.reply, isPlan: true })
+      setStatusText(null)
     },
     [locale, getBlueprint, onBlueprint, push],
   )
@@ -132,7 +138,8 @@ export function useBlueprintChat(opts: {
     setMessages([])
     setError(null)
     setThinking(false)
+    setStatusText(null)
   }, [])
 
-  return { messages, thinking, error, submit, answerClarify, reset }
+  return { messages, thinking, statusText, error, submit, answerClarify, reset }
 }

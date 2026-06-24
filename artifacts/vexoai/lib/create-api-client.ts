@@ -60,6 +60,86 @@ export function requestBlueprint(input: {
   return postJson<{ reply: string; blueprint: RawBlueprint }>("/api/blueprint", input)
 }
 
+// Streaming version — emits SSE events during the agentic loop so the UI can
+// show real-time status messages ("Хоолой шалгаж байна…", "Кредит тооцоолж байна…").
+export async function streamBlueprint(
+  input: {
+    idea: string
+    locale: "mn" | "en"
+    model?: BlueprintModel
+    currentBlueprint?: VideoBlueprint
+  },
+  callbacks: {
+    onStatus: (message: string) => void
+    onDone: (data: { reply: string; blueprint: RawBlueprint; chatRemaining?: number }) => void
+    onError: (message: string, statusCode?: number) => void
+  },
+): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch("/api/blueprint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+  } catch {
+    callbacks.onError("Сүлжээний алдаа")
+    return
+  }
+
+  // Early non-streaming errors (400, 429, etc. before the stream starts).
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => null)
+    callbacks.onError((data?.error || data?.message) ?? `Request failed (${res.status})`, res.status)
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      // SSE events are separated by double newlines.
+      const parts = buffer.split("\n\n")
+      buffer = parts.pop() ?? ""
+
+      for (const part of parts) {
+        if (!part.trim()) continue
+        let eventType = "message"
+        let dataLine = ""
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: ")) eventType = line.slice(7).trim()
+          if (line.startsWith("data: ")) dataLine = line.slice(6)
+        }
+        if (!dataLine) continue
+        let payload: Record<string, unknown>
+        try {
+          payload = JSON.parse(dataLine)
+        } catch {
+          continue
+        }
+        if (eventType === "status" && typeof payload.message === "string") {
+          callbacks.onStatus(payload.message)
+        } else if (eventType === "done") {
+          callbacks.onDone(payload as { reply: string; blueprint: RawBlueprint; chatRemaining?: number })
+        } else if (eventType === "error") {
+          callbacks.onError(
+            typeof payload.message === "string" ? payload.message : "Unknown error",
+            typeof payload.statusCode === "number" ? payload.statusCode : undefined,
+          )
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 // ── TTS ──────────────────────────────────────────────────────────────────────
 export function generateTts(text: string, voice: string, language: string) {
   return postJson<{ audioUrl: string; duration?: number }>("/api/tts", { text, voice, language })

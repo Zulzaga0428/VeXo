@@ -9,6 +9,7 @@ interface ChatPanelProps {
   locale: "mn" | "en"
   messages: ChatMessage[]
   thinking: boolean
+  statusText?: string | null
   hasBlueprint: boolean
   disabled?: boolean
   onSubmit: (text: string) => void
@@ -20,6 +21,7 @@ export function ChatPanel({
   locale,
   messages,
   thinking,
+  statusText,
   hasBlueprint,
   disabled = false,
   onSubmit,
@@ -136,7 +138,9 @@ export function ChatPanel({
         {thinking && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {t("Бодож байна…", "Thinking…")}
+            <span className="transition-all duration-300">
+              {statusText ?? t("Бодож байна…", "Thinking…")}
+            </span>
           </div>
         )}
       </div>

@@ -18,7 +18,7 @@ const CSS = `
   --line:rgba(255,255,255,0.08);--line-strong:rgba(255,255,255,0.16);
   --tungsten:#F3B279;--teal:#2DD4BF;--teal-deep:#0d9488;
   --text:#ECEEF1;--muted:#8B919C;--faint:#565C66;--vg:#55AA5B;--vr:#B80D0D;
-  display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;box-sizing:border-box;
+  display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;box-sizing:border-box;min-height:100%;
   font-family:'Manrope',system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;
   background:radial-gradient(1200px 600px at 80% -10%,rgba(45,212,191,0.06),transparent 60%),
     radial-gradient(900px 500px at 10% 110%,rgba(184,13,13,0.045),transparent 55%),var(--ink);

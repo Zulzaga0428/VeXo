@@ -10,8 +10,8 @@ import {
   Coins,
   Film,
   Globe,
+  Loader2,
   Minus,
-  Pencil,
   Plus,
   RectangleHorizontal,
   User,
@@ -34,7 +34,6 @@ interface BlueprintViewfinderProps {
   blueprint: VideoBlueprint
   generating: boolean
   onChange: (bp: VideoBlueprint) => void
-  onEdit: () => void
   onGenerate: () => void
 }
 
@@ -162,6 +161,14 @@ const CSS = `
   box-shadow:0 8px 24px -10px rgba(45,212,191,0.45);text-transform:uppercase;letter-spacing:0.06em;font-weight:800}
 .vx-gen:hover{filter:brightness(1.08)}
 .vx-gen:disabled{cursor:not-allowed;opacity:0.4;box-shadow:none;filter:none}
+.vx-gen-loading,.vx-gen-loading:disabled{opacity:1;cursor:wait;position:relative;overflow:hidden;
+  box-shadow:0 8px 24px -10px rgba(45,212,191,0.45);filter:none}
+.vx-gen-loading::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,0.5) 50%,transparent 65%);
+  transform:translateX(-100%);animation:vxsweep 1.3s ease-in-out infinite}
+@keyframes vxsweep{to{transform:translateX(100%)}}
+@keyframes vxspin{to{transform:rotate(360deg)}}
+.vx-spin{animation:vxspin .8s linear infinite}
 .vx-btn svg{width:17px;height:17px}
 
 @media (max-width:560px){
@@ -255,7 +262,7 @@ function timecode(seconds: number): string {
   return `00:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:00`
 }
 
-export function BlueprintViewfinder({ locale, blueprint, generating, onChange, onEdit, onGenerate }: BlueprintViewfinderProps) {
+export function BlueprintViewfinder({ locale, blueprint, generating, onChange, onGenerate }: BlueprintViewfinderProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   const cambMap = useCambNames()
 
@@ -639,13 +646,23 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
 
         {/* Actions */}
         <div className="vx-actions">
-          <button className="vx-btn vx-ghost" onClick={onEdit} type="button">
-            <Pencil />
-            {t("Засах", "Edit")}
-          </button>
-          <button className="vx-btn vx-gen" onClick={onGenerate} disabled={blocked} type="button">
-            {generating ? t("Үүсгэж байна…", "Generating…") : t("Generate", "Generate")}
-            <ArrowRight />
+          <button
+            className={`vx-btn vx-gen${generating ? " vx-gen-loading" : ""}`}
+            onClick={onGenerate}
+            disabled={blocked}
+            type="button"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="vx-spin" />
+                {t("Үүсгэж байна…", "Generating…")}
+              </>
+            ) : (
+              <>
+                {t("Generate", "Generate")}
+                <ArrowRight />
+              </>
+            )}
           </button>
         </div>
       </div>

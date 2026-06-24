@@ -224,7 +224,6 @@ export function CreatePageClient() {
                   blueprint={blueprint}
                   generating={gen.phase === "running"}
                   onChange={setBlueprint}
-                  onEdit={() => setPlanMode("edit")}
                   onGenerate={handleGenerate}
                 />
               ) : (

@@ -18,7 +18,7 @@ export function CreatePageClient() {
   const [blueprint, setBlueprint] = useState<VideoBlueprint | null>(null)
   const [view, setView] = useState<CreateView>("plan")
   const [navOpen, setNavOpen] = useState(false)
-  const [chatWidth, setChatWidth] = useState(320)
+  const [chatWidth, setChatWidth] = useState(420)
   const [artifactsCollapsed, setArtifactsCollapsed] = useState(false)
 
   // Drag-to-resize the Director (chat) panel. The workspace starts at the
@@ -29,7 +29,7 @@ export function CreatePageClient() {
       const startX = e.clientX
       const startW = chatWidth
       const onMove = (ev: PointerEvent) => {
-        setChatWidth(Math.min(600, Math.max(240, startW + ev.clientX - startX)))
+        setChatWidth(Math.min(720, Math.max(280, startW + ev.clientX - startX)))
       }
       const onUp = () => {
         window.removeEventListener("pointermove", onMove)

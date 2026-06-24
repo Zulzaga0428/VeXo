@@ -132,7 +132,7 @@ export function ChatPanel({
       </div>
 
       <div className="border-t border-border p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-border bg-background p-2 transition-colors focus-within:border-accent/50">
+        <div className="flex items-end gap-2 rounded-xl border border-border bg-white/[0.04] p-2 backdrop-blur-sm transition-colors focus-within:border-accent/50">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

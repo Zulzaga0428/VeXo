@@ -179,15 +179,22 @@ export async function POST(req: NextRequest) {
           : `Current plan (JSON):\n${JSON.stringify(slim)}\n\nUser's change request: `) + idea.trim()
     }
 
-    // Agentic loop — max 3 turns so Claude can call get_voices once, then reply.
-    const msgs: Anthropic.MessageParam[] = [{ role: "user", content: userContent }]
-    let message: Anthropic.Message | null = null
+    // Agentic loop (max 5 turns): Claude thinks → calls tools → thinks again → returns blueprint.
+    // Step 3 of Agentic Planner: extended (interleaved) thinking lets Claude reason
+    // deeply about scene structure and credit trade-offs before producing the blueprint.
+    // budget_tokens controls thinking depth; max_tokens must exceed budget.
+    const THINKING_BUDGET = 8000
 
-    for (let turn = 0; turn < 3; turn++) {
+    const msgs: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userContent }]
+    let message: Anthropic.Beta.BetaMessage | null = null
+
+    for (let turn = 0; turn < 5; turn++) {
       message = await withRetry(() =>
-        anthropic.messages.create({
+        anthropic.beta.messages.create({
           model: "claude-sonnet-4-5",
-          max_tokens: 3000,
+          max_tokens: 12000,
+          thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
+          betas: ["interleaved-thinking-2025-05-14"],
           system: buildSystemPrompt(locale, safeModel),
           tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL],
           messages: msgs,
@@ -198,14 +205,14 @@ export async function POST(req: NextRequest) {
 
       // Claude may call multiple tools in one turn — handle all of them.
       const toolBlocks = message.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+        (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use",
       )
       if (toolBlocks.length === 0) break
 
       msgs.push({ role: "assistant", content: message.content })
 
       // Build all tool results in parallel then push as one user message.
-      const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+      const toolResults: Anthropic.Beta.BetaToolResultBlockParam[] = await Promise.all(
         toolBlocks.map(async (toolBlock) => {
           if (toolBlock.name === "get_voices") {
             let voices: Array<{ id: number; name: string; gender: string }> = []
@@ -265,7 +272,8 @@ export async function POST(req: NextRequest) {
       msgs.push({ role: "user", content: toolResults })
     }
 
-    const text = message?.content.find((b) => b.type === "text")?.text ?? ""
+    const textBlock = message?.content.find((b) => b.type === "text")
+    const text = textBlock && "text" in textBlock ? (textBlock.text as string) : ""
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json({ error: "Could not build a plan. Please try again." }, { status: 502 })

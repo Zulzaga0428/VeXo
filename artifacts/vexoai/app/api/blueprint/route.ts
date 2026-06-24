@@ -3,10 +3,23 @@ import Anthropic from "@anthropic-ai/sdk"
 import { bumpChatUsage, DAILY_CHAT_LIMIT } from "@/lib/credits"
 import type { RawBlueprint, VideoBlueprint } from "@/lib/blueprint"
 import { withRetry } from "@/lib/anthropic-retry"
+import { cambListVoices, isCambConfigured } from "@/lib/cambai"
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
+
+// Step 1 of Agentic Planner: get_voices tool lets Claude query the real list of
+// available Mongolian voice actors before writing scripts, so it can pick an
+// appropriate voice name and gender rather than guessing.
+const GET_VOICES_TOOL: Anthropic.Tool = {
+  name: "get_voices",
+  description:
+    "Returns the list of available Mongolian voice actors (name, gender, id). " +
+    "Call this ONCE before writing the blueprint so you can reference a real voice " +
+    "name in your reply (e.g. 'Нандин эмэгтэй хоолойтой'). Do NOT invent voice names.",
+  input_schema: { type: "object" as const, properties: {}, required: [] },
+}
 
 // The agent turns a plain-language idea into a full, editable Video Plan
 // (blueprint). Unlike the old plan-episode (a bare scene list), this returns the
@@ -133,16 +146,61 @@ export async function POST(req: NextRequest) {
           : `Current plan (JSON):\n${JSON.stringify(slim)}\n\nUser's change request: `) + idea.trim()
     }
 
-    const message = await withRetry(() =>
-      anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 3000,
-        system: buildSystemPrompt(locale, safeModel),
-        messages: [{ role: "user", content: userContent }],
-      }),
-    )
+    // Agentic loop — max 3 turns so Claude can call get_voices once, then reply.
+    const msgs: Anthropic.MessageParam[] = [{ role: "user", content: userContent }]
+    let message: Anthropic.Message | null = null
 
-    const text = message.content[0]?.type === "text" ? message.content[0].text : ""
+    for (let turn = 0; turn < 3; turn++) {
+      message = await withRetry(() =>
+        anthropic.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 3000,
+          system: buildSystemPrompt(locale, safeModel),
+          tools: [GET_VOICES_TOOL],
+          messages: msgs,
+        }),
+      )
+
+      if (message.stop_reason !== "tool_use") break
+
+      // Claude wants to call a tool — execute it and feed the result back.
+      const toolBlock = message.content.find(
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+      )
+      if (!toolBlock) break
+
+      msgs.push({ role: "assistant", content: message.content })
+
+      if (toolBlock.name === "get_voices") {
+        let voices: Array<{ id: number; name: string; gender: string }> = []
+        if (isCambConfigured()) {
+          try {
+            const all = await cambListVoices()
+            voices = all
+              .filter((v) => v.language === 100)
+              .map((v) => ({
+                id: v.id,
+                name: v.name,
+                gender: v.gender === 1 ? "male" : "female",
+              }))
+          } catch {
+            voices = []
+          }
+        }
+        msgs.push({
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolBlock.id,
+              content: JSON.stringify(voices.length ? voices : [{ note: "No voices found" }]),
+            },
+          ],
+        })
+      }
+    }
+
+    const text = message?.content.find((b) => b.type === "text")?.text ?? ""
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json({ error: "Could not build a plan. Please try again." }, { status: 502 })

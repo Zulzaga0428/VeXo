@@ -9,7 +9,7 @@ import { useVideoGeneration } from "@/hooks/use-video-generation"
 import type { VideoBlueprint } from "@/lib/blueprint"
 import { ChatPanel } from "@/components/create/chat-panel"
 import { ArtifactsPanel, type CreateView } from "@/components/create/artifacts-panel"
-import { BlueprintEditor } from "@/components/create/blueprint-editor"
+import BlueprintCard from "@/components/create/blueprint-card"
 import { GenerationTimeline } from "@/components/create/generation-timeline"
 import { VideoResult } from "@/components/create/video-result"
 
@@ -213,13 +213,9 @@ export function CreatePageClient() {
                 />
               )
             ) : blueprint ? (
-              <BlueprintEditor
-                locale={locale}
-                blueprint={blueprint}
-                generating={gen.phase === "running"}
-                onChange={setBlueprint}
-                onGenerate={handleGenerate}
-              />
+              <div className="h-full overflow-y-auto">
+                <BlueprintCard />
+              </div>
             ) : (
               <EmptyState locale={locale} />
             )}

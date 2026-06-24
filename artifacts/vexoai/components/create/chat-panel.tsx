@@ -29,10 +29,20 @@ export function ChatPanel({
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   const [input, setInput] = useState("")
   const scrollRef = useRef<HTMLDivElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
   }, [messages, thinking])
+
+  // Auto-grow the input as the user types: reset to natural height, then expand
+  // to fit the content (capped — only scrolls when the message gets very long).
+  useEffect(() => {
+    const el = taRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`
+  }, [input])
 
   const send = () => {
     const v = input.trim()
@@ -134,6 +144,7 @@ export function ChatPanel({
       <div className="border-t border-border p-3">
         <div className="flex items-end gap-2 rounded-xl border border-border bg-white/[0.04] p-2 backdrop-blur-sm transition-colors focus-within:border-accent/50">
           <textarea
+            ref={taRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -142,7 +153,7 @@ export function ChatPanel({
                 send()
               }
             }}
-            rows={1}
+            rows={2}
             disabled={disabled}
             placeholder={
               disabled
@@ -151,7 +162,7 @@ export function ChatPanel({
                   ? t("Төлөвлөгөөг засах хүсэлт…", "Ask to change the plan…")
                   : t("Видеоныхоо санааг бичээрэй…", "Describe your video idea…")
             }
-            className="max-h-32 flex-1 resize-none bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+            className="max-h-[320px] min-h-[64px] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm leading-relaxed outline-none placeholder:text-muted-foreground disabled:opacity-60"
           />
           <button
             onClick={send}

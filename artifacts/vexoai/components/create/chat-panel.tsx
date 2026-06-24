@@ -83,7 +83,7 @@ export function ChatPanel({
                   key={s}
                   onClick={() => onSubmit(s)}
                   disabled={disabled}
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-left text-xs text-muted-foreground transition hover:border-accent/50 hover:bg-accent/5 hover:text-foreground disabled:opacity-50"
+                  className="rounded-lg border border-border bg-white/[0.04] px-3 py-2 text-left text-xs text-muted-foreground backdrop-blur-sm transition hover:border-accent/50 hover:bg-accent/10 hover:text-foreground disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -112,7 +112,7 @@ export function ChatPanel({
                       key={`${q.question}-${opt}`}
                       onClick={() => onAnswerClarify(opt)}
                       disabled={thinking || disabled}
-                      className="rounded-full border border-border bg-background px-3 py-1 text-xs transition hover:border-accent/50 hover:text-accent disabled:opacity-50"
+                      className="rounded-full border border-border bg-white/[0.04] px-3 py-1 text-xs backdrop-blur-sm transition hover:border-accent/50 hover:bg-accent/10 hover:text-accent disabled:opacity-50"
                     >
                       {opt}
                     </button>

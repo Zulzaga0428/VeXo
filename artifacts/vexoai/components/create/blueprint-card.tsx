@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { newSceneId, recomputeDuration } from "@/lib/blueprint";
+import { estimateSceneCredits } from "@/lib/blueprint-costs";
 import { uploadImage, generateImage } from "@/lib/create-api-client";
 
 // VexoAI — multi-scene Blueprint editor.
@@ -267,12 +268,14 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
       voice: vIdx,
       duration: s.durationSec,
       ratio: bp.orientation,
+      credits: estimateSceneCredits(s, bp.model),
       collapsed: collapsed.has(s.id),
     };
   });
 
   const N = scenes.length;
   const totalDur = scenes.reduce((a, s) => a + s.duration, 0);
+  const maxDur = bp.model === "veo3" ? 8 : 15;
   const rScene = Math.min(N, Math.floor((pct / 100) * N) + 1);
   const stageLabel = STAGES[Math.min(STAGES.length - 1, Math.floor((pct / 100) * STAGES.length))];
 
@@ -294,8 +297,27 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
     return () => clearInterval(t2.current);
   }, [playing, totalDur]);
 
+  // Enforce the per-quality duration cap on loaded/generated data too, not just
+  // on user edits: a blueprint can arrive as Premium (veo3) with scenes >8s, so
+  // normalize once on mount and whenever the quality/scenes change. The over-cap
+  // guard keeps this from looping (after clamp nothing exceeds the cap).
+  useEffect(() => {
+    const cap = bp.model === "veo3" ? 8 : 15;
+    if (bp.scenes.some((s) => s.durationSec > cap)) {
+      commit({ ...bp, scenes: bp.scenes.map((s) => (s.durationSec > cap ? { ...s, durationSec: cap } : s)) });
+    }
+  }, [bp.model, bp.scenes]);
+
   // -- Write helpers: every edit flows back into the real VideoBlueprint --
   const commit = (next) => onChange?.({ ...next, durationSec: recomputeDuration(next) });
+  // Quality (model) is blueprint-global. Switching it also clamps every scene to
+  // the new per-scene duration cap (Standard 15s, Premium/veo3 8s).
+  const setModel = (m) => {
+    const cap = m === "veo3" ? 8 : 15;
+    const scenes = bp.scenes.map((s) => (s.durationSec > cap ? { ...s, durationSec: cap } : s));
+    commit({ ...bp, model: m, scenes });
+    setMenu(null);
+  };
   const patchSceneAt = (i, p) =>
     commit({ ...bp, scenes: bp.scenes.map((s, idx) => (idx === i ? { ...s, ...p } : s)) });
 
@@ -352,7 +374,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
     }
     if (k === "script") return patchSceneAt(i, { script: v });
     if (k === "style") return patchSceneAt(i, { visualPrompt: v });
-    if (k === "duration") return patchSceneAt(i, { durationSec: v });
+    if (k === "duration") return patchSceneAt(i, { durationSec: Math.min(maxDur, Math.max(2, v)) });
     if (k === "ratio") return commit({ ...bp, orientation: v });
     if (k === "type") return patchSceneAt(i, { type: v });
     if (k === "avatar") return setSceneAvatar(i, v || null);
@@ -498,7 +520,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                             <span className="vx-step">
                               <button onClick={() => setField(i, "duration", Math.max(2, sc.duration - 1))} disabled={sc.duration <= 2}>−</button>
                               <b>{sc.duration}s</b>
-                              <button onClick={() => setField(i, "duration", Math.min(60, sc.duration + 1))} disabled={sc.duration >= 60}>+</button>
+                              <button onClick={() => setField(i, "duration", Math.min(maxDur, sc.duration + 1))} disabled={sc.duration >= maxDur}>+</button>
                             </span>
                             <span className="vx-chip click" onClick={() => setField(i, "type", sc.type === "a_roll" ? "b_roll" : "a_roll")}>
                               <Svg d={sc.type === "b_roll" ? I.film : I.user} s={{ width: 12, height: 12 }} />{sc.type === "b_roll" ? tr("Дүрс", "Footage") : tr("Ярьдаг", "Talking")}
@@ -510,17 +532,17 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                               <Svg d={I.sparkle} s={{ width: 12, height: 12 }} />{bp.model === "veo3" ? tr("Премиум", "Premium") : tr("Стандарт", "Standard")}
                               {menu && menu.i === i && menu.field === "model" && (
                                 <div className="vx-pop" style={{ minWidth: 190, right: "auto" }} onClick={(e) => e.stopPropagation()}>
-                                  <div className={`vx-pi${bp.model !== "veo3" ? " on" : ""}`} onClick={() => { onChange?.({ ...bp, model: "standard" }); setMenu(null); }}>
-                                    <span className="vx-nm">{tr("Стандарт", "Standard")}</span><span className="vx-ptag">standard</span>
+                                  <div className={`vx-pi${bp.model !== "veo3" ? " on" : ""}`} onClick={() => setModel("standard")}>
+                                    <span className="vx-nm">{tr("Стандарт", "Standard")}</span><span className="vx-ptag">max 15s</span>
                                   </div>
-                                  <div className={`vx-pi${bp.model === "veo3" ? " on" : ""}`} onClick={() => { onChange?.({ ...bp, model: "veo3" }); setMenu(null); }}>
-                                    <span className="vx-nm">{tr("Премиум", "Premium")}</span><span className="vx-ptag">veo3</span>
+                                  <div className={`vx-pi${bp.model === "veo3" ? " on" : ""}`} onClick={() => setModel("veo3")}>
+                                    <span className="vx-nm">{tr("Премиум", "Premium")}</span><span className="vx-ptag">max 8s</span>
                                   </div>
                                 </div>
                               )}
                             </span>
                             <span className="vx-chip"><Svg d={I.cc} s={{ width: 12, height: 12 }} />Subtitles</span>
-                            <span className="vx-chip vx-credit"><Svg d={I.coin} s={{ width: 12, height: 12 }} />15–30 cr</span>
+                            <span className="vx-chip vx-credit"><Svg d={I.coin} s={{ width: 12, height: 12 }} />{sc.credits} cr</span>
                           </div>
                         </div>
                       )}

@@ -24,7 +24,7 @@ const CSS = `
     radial-gradient(900px 500px at 10% 110%,rgba(184,13,13,0.045),transparent 55%),var(--ink);
 }
 .vx-wrap *{box-sizing:border-box}
-.vx-card{position:relative;width:100%;max-width:660px;background:linear-gradient(180deg,var(--surface) 0%,#0D0F14 100%);
+.vx-card{position:relative;width:100%;max-width:860px;background:linear-gradient(180deg,var(--surface) 0%,#0D0F14 100%);
   border:1px solid var(--line);border-radius:22px;box-shadow:0 40px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.02) inset}
 .vx-clip{border-radius:22px;overflow:hidden}
 
@@ -506,7 +506,19 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                             <span className="vx-chip click" onClick={() => setField(i, "ratio", RATIOS[(RATIOS.indexOf(sc.ratio) + 1) % RATIOS.length])}>
                               <RatioGlyph ratio={sc.ratio} />{sc.ratio}
                             </span>
-                            <span className="vx-chip"><Svg d={I.globe} s={{ width: 12, height: 12 }} />mn-MN</span>
+                            <span className="vx-chip click" style={{ position: "relative" }} onClick={() => setMenu(menu && menu.i === i && menu.field === "model" ? null : { i, field: "model" })}>
+                              <Svg d={I.sparkle} s={{ width: 12, height: 12 }} />{bp.model === "veo3" ? tr("Премиум", "Premium") : tr("Стандарт", "Standard")}
+                              {menu && menu.i === i && menu.field === "model" && (
+                                <div className="vx-pop" style={{ minWidth: 190, right: "auto" }} onClick={(e) => e.stopPropagation()}>
+                                  <div className={`vx-pi${bp.model !== "veo3" ? " on" : ""}`} onClick={() => { onChange?.({ ...bp, model: "standard" }); setMenu(null); }}>
+                                    <span className="vx-nm">{tr("Стандарт", "Standard")}</span><span className="vx-ptag">standard</span>
+                                  </div>
+                                  <div className={`vx-pi${bp.model === "veo3" ? " on" : ""}`} onClick={() => { onChange?.({ ...bp, model: "veo3" }); setMenu(null); }}>
+                                    <span className="vx-nm">{tr("Премиум", "Premium")}</span><span className="vx-ptag">veo3</span>
+                                  </div>
+                                </div>
+                              )}
+                            </span>
                             <span className="vx-chip"><Svg d={I.cc} s={{ width: 12, height: 12 }} />Subtitles</span>
                             <span className="vx-chip vx-credit"><Svg d={I.coin} s={{ width: 12, height: 12 }} />15–30 cr</span>
                           </div>

@@ -1,0 +1,47 @@
+2️⃣ ChatPanel дотор — Collapsible thinking block
+
+
+// Props дотор
+statusSteps?: string[]
+
+// Component дотор state нэмэ
+const [stepsOpen, setStepsOpen] = useState(true)
+
+// Шинэ step ирэх бүрт автоматаар нээ
+useEffect(() => {
+  if (statusSteps.length > 0) setStepsOpen(true)
+}, [statusSteps.length])
+
+// Thinking block (thinking === true үед харуулна)
+{thinking && (
+  <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-white/[0.03]">
+    {/* Header — toggle button */}
+    <button
+      onClick={() => setStepsOpen((o) => !o)}
+      className="flex w-full items-center gap-2 px-3 py-2 hover:bg-white/[0.04]"
+    >
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+      <span className="flex-1 text-xs font-medium text-muted-foreground">
+        {statusSteps.length === 0
+          ? "Бодож байна…"
+          : stepsOpen ? "Нуух" : "Харуулах"}
+      </span>
+      {statusSteps.length > 0 &&
+        (stepsOpen
+          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />)}
+    </button>
+
+    {/* Steps жагсаалт */}
+    {stepsOpen && statusSteps.length > 0 && (
+      <div className="border-t border-border/40 px-3 py-2 space-y-1.5">
+        {statusSteps.map((step, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <BrainCog className="mt-0.5 h-3.5 w-3.5 text-accent/70" />
+            <span className="text-xs text-muted-foreground">{step}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}

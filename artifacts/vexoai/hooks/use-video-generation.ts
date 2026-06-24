@@ -65,6 +65,9 @@ function runKeyOf(bp: VideoBlueprint): string {
       dur: s.durationSec,
       // Which actor speaks — switching a scene's character must regenerate it.
       char: s.characterIdx ?? 0,
+      // b_roll featured avatar — changing it switches text↔image generation,
+      // so it must invalidate cached footage too.
+      bAvatar: s.avatar?.imageUrl ?? null,
     })),
   })
 }
@@ -298,21 +301,27 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
             if (cancelRef.current) return
 
             // 2. Submit the video job — skip if one was already accepted.
+            //    If the user picked an avatar for this b_roll scene, drive it
+            //    image-to-video so that person appears in the footage; otherwise
+            //    plain text-to-video.
+            const featured = scene.avatar?.imageUrl
+            const mode: "image" | "text" = featured ? "image" : "text"
             let job: SceneJob
             if (st.job) {
               job = st.job
             } else {
               patch(scene.id, { status: "video", progress: 30 })
               const gv = await generateVideo({
-                mode: "text",
+                mode,
                 prompt,
+                imageUrl: featured,
                 duration: scene.durationSec,
                 aspectRatio: bp.orientation,
                 model: bp.model,
                 generateAudio: false,
               })
               if (!gv.ok) throw new Error(gv.error)
-              job = { kind: "video", requestId: gv.data.requestId, model: bp.model, mode: "text" }
+              job = { kind: "video", requestId: gv.data.requestId, model: bp.model, mode }
               st = { ...st, job }
               setState(st)
             }

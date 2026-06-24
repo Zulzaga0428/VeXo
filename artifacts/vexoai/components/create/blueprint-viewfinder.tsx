@@ -122,6 +122,7 @@ const CSS = `
 .vx-copy.vx-empty{color:var(--faint);font-style:italic}
 .vx-cast{padding:14px 0 2px}
 .vx-castgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+.vx-castgrid.vx-castgrid-1{grid-template-columns:1fr}
 .vx-slot{display:flex;align-items:center;gap:13px;padding:11px 13px;border-radius:13px;
   background:var(--inset);border:1px solid var(--line);min-width:0}
 .vx-av{width:42px;height:42px;border-radius:10px;flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;
@@ -464,6 +465,51 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onChange, o
                           value={{ voiceId: sceneChar.voice.voiceId, lang: sceneChar.voice.lang }}
                           onChange={(sel) => updateCharacter(charIdx, { voice: { ...sceneChar.voice, ...sel } })}
                           locale={locale}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {scene.type === "b_roll" && (
+                  <div className="vx-cast">
+                    <div className="vx-eye">{t("Дүр — заавал биш", "Cast — optional")}</div>
+                    <div className="vx-castgrid vx-castgrid-1">
+                      <button
+                        type="button"
+                        className={`vx-slot vx-edit${openSlot === `${scene.id}:avatar` ? " vx-open" : ""}`}
+                        onClick={() => toggleSlot(`${scene.id}:avatar`)}
+                      >
+                        <div className="vx-av">
+                          {scene.avatar?.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={scene.avatar.imageUrl} alt="" />
+                          ) : (
+                            <User className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div className="vx-meta">
+                          <span className="vx-k">{t("Аватар", "Avatar")}</span>
+                          {scene.avatar?.imageUrl ? (
+                            <span className="vx-v">{scene.avatar.label || t("Бэлэн дүр", "Ready")}</span>
+                          ) : (
+                            <span className="vx-v vx-pending">{t("Сонгох (1-р хоолойгоор)", "Add one (uses main voice)")}</span>
+                          )}
+                        </div>
+                        <span className="vx-slot-tail">
+                          <ChevronDown />
+                        </span>
+                      </button>
+                    </div>
+
+                    {openSlot === `${scene.id}:avatar` && (
+                      <div className="dark vx-panel">
+                        <AvatarPicker
+                          locale={locale}
+                          avatar={scene.avatar ?? { type: "none" }}
+                          orientation={blueprint.orientation}
+                          required={false}
+                          onChange={(avatar) => patchScene(scene.id, { avatar })}
                         />
                       </div>
                     )}

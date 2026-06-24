@@ -5,21 +5,34 @@ import {
   ArrowRight,
   AudioWaveform,
   Captions,
+  ChevronDown,
   Clock,
   Coins,
   Globe,
+  Minus,
   Pencil,
+  Plus,
   RectangleHorizontal,
   User,
 } from "lucide-react"
-import type { Character, Orientation, VideoBlueprint, VoiceRef } from "@/lib/blueprint"
+import {
+  recomputeDuration,
+  type BlueprintScene,
+  type Character,
+  type Orientation,
+  type VideoBlueprint,
+  type VoiceRef,
+} from "@/lib/blueprint"
 import { estimateBlueprintCredits } from "@/lib/blueprint-costs"
 import { VOICES } from "@/lib/voices-catalog"
+import { AvatarPicker } from "@/components/create/avatar-picker"
+import { VoicePicker } from "@/components/studio-voice-picker"
 
 interface BlueprintViewfinderProps {
   locale: "mn" | "en"
   blueprint: VideoBlueprint
   generating: boolean
+  onChange: (bp: VideoBlueprint) => void
   onEdit: () => void
   onGenerate: () => void
 }
@@ -47,7 +60,7 @@ const CSS = `
 .vx-card{
   width:100%; max-width:680px; margin:0 auto;
   background:linear-gradient(180deg, var(--surface) 0%, #0D0F14 100%);
-  border:1px solid var(--line); border-radius:22px; overflow:hidden;
+  border:1px solid var(--line); border-radius:22px; overflow:visible;
   box-shadow:0 40px 80px -20px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02) inset;
 }
 
@@ -149,6 +162,28 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){
   .vx-dot,.vx-pulse{animation:none}
 }
+
+/* Inline editing — interactive slots & chips */
+.vx-wrap button{font-family:inherit}
+button.vx-slot{width:100%;text-align:left;color:inherit}
+.vx-slot.vx-edit{cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.vx-slot.vx-edit:hover{border-color:var(--line-strong);background:#10131a}
+.vx-slot-tail{margin-left:auto;flex:none;display:flex;align-items:center;color:var(--faint);
+  transition:transform .2s ease,color .15s ease}
+.vx-slot-tail svg{width:15px;height:15px}
+.vx-slot.vx-open .vx-slot-tail{color:var(--teal);transform:rotate(180deg)}
+.vx-panel{margin-top:12px;padding:14px;border-radius:13px;background:var(--inset);border:1px solid var(--line)}
+.vx-chip.vx-act{cursor:pointer;transition:border-color .15s ease,color .15s ease,background .15s ease}
+.vx-chip.vx-act:hover{border-color:var(--line-strong);color:var(--text);background:var(--inset)}
+.vx-step{display:inline-flex;align-items:center;border-radius:9px;overflow:hidden;
+  border:1px solid var(--line);background:var(--surface-2);font-family:'JetBrains Mono',monospace}
+.vx-step button{width:28px;height:30px;border:none;background:transparent;color:var(--muted);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background .15s ease,color .15s ease}
+.vx-step button:hover:not(:disabled){background:rgba(255,255,255,0.06);color:var(--text)}
+.vx-step button:disabled{opacity:0.28;cursor:not-allowed}
+.vx-step .vx-step-v{min-width:40px;text-align:center;font-size:11px;color:var(--text);letter-spacing:0.04em}
+.vx-step svg{width:13px;height:13px}
 `
 
 // Resolve a friendly display name for a voice. camb.ai studio voices are loaded
@@ -194,6 +229,13 @@ const RATIO_LABEL: Record<Orientation, string> = {
   "1:1": "SQUARE",
 }
 
+// Display tag for a spoken-language code (the value that actually drives TTS).
+function langTagOf(lang: string): string {
+  if (lang === "mn") return "mn-MN"
+  if (lang === "en") return "en-US"
+  return `${lang}-${lang.toUpperCase()}`
+}
+
 function timecode(seconds: number): string {
   const s = Math.max(0, Math.round(seconds))
   const mm = Math.floor(s / 60)
@@ -201,11 +243,41 @@ function timecode(seconds: number): string {
   return `00:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:00`
 }
 
-export function BlueprintViewfinder({ locale, blueprint, generating, onEdit, onGenerate }: BlueprintViewfinderProps) {
+export function BlueprintViewfinder({ locale, blueprint, generating, onChange, onEdit, onGenerate }: BlueprintViewfinderProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   const cambMap = useCambNames()
 
   const credits = useMemo(() => estimateBlueprintCredits(blueprint), [blueprint])
+
+  // Which cast slot is expanded for inline editing — keyed by `${sceneId}:avatar|voice`.
+  const [openSlot, setOpenSlot] = useState<string | null>(null)
+  const toggleSlot = (key: string) => setOpenSlot((k) => (k === key ? null : key))
+
+  const patch = (p: Partial<VideoBlueprint>) => onChange({ ...blueprint, ...p })
+
+  // Mirrors the editor: index 0 edits the primary avatar/voice, 1+ edit bp.characters.
+  const updateCharacter = (idx: number, p: Partial<Character>) => {
+    if (idx === 0) {
+      if (p.avatar !== undefined) patch({ avatar: p.avatar })
+      if (p.voice !== undefined) patch({ voice: p.voice })
+    } else {
+      const chars = [...(blueprint.characters ?? [])]
+      if (!chars[idx - 1]) return
+      chars[idx - 1] = { ...chars[idx - 1], ...p }
+      patch({ characters: chars })
+    }
+  }
+
+  const patchScene = (id: string, p: Partial<BlueprintScene>) => {
+    const scenes = blueprint.scenes.map((s) => (s.id === id ? { ...s, ...p } : s))
+    onChange({ ...blueprint, scenes, durationSec: recomputeDuration({ ...blueprint, scenes }) })
+  }
+
+  const ORIENTATION_ORDER: Orientation[] = ["9:16", "16:9", "1:1"]
+  const cycleOrientation = () => {
+    const i = ORIENTATION_ORDER.indexOf(blueprint.orientation)
+    patch({ orientation: ORIENTATION_ORDER[(i + 1) % ORIENTATION_ORDER.length] })
+  }
 
   const allCharacters: Character[] = useMemo(
     () => [{ id: "__primary__", avatar: blueprint.avatar, voice: blueprint.voice }, ...(blueprint.characters ?? [])],
@@ -282,7 +354,8 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onEdit, onG
         {/* Body — one block per scene */}
         <div className="vx-body">
           {blueprint.scenes.map((scene, idx) => {
-            const sceneChar = allCharacters[scene.characterIdx ?? 0] ?? allCharacters[0]
+            const charIdx = scene.characterIdx ?? 0
+            const sceneChar = allCharacters[charIdx] ?? allCharacters[0]
             const hasAvatar = !!sceneChar.avatar.imageUrl
             return (
               <div className="vx-scene" key={scene.id}>
@@ -319,7 +392,11 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onEdit, onG
                   <div className="vx-cast">
                     <div className="vx-eye">{t("Дүр", "Cast")}</div>
                     <div className="vx-castgrid">
-                      <div className="vx-slot">
+                      <button
+                        type="button"
+                        className={`vx-slot vx-edit${openSlot === `${scene.id}:avatar` ? " vx-open" : ""}`}
+                        onClick={() => toggleSlot(`${scene.id}:avatar`)}
+                      >
                         <div className="vx-av">
                           {hasAvatar ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -339,8 +416,15 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onEdit, onG
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="vx-slot">
+                        <span className="vx-slot-tail">
+                          <ChevronDown />
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`vx-slot vx-edit${openSlot === `${scene.id}:voice` ? " vx-open" : ""}`}
+                        onClick={() => toggleSlot(`${scene.id}:voice`)}
+                      >
                         <div className="vx-av">
                           <AudioWaveform className="h-5 w-5" />
                         </div>
@@ -350,24 +434,80 @@ export function BlueprintViewfinder({ locale, blueprint, generating, onEdit, onG
                           </span>
                           <span className="vx-v">{voiceName(sceneChar.voice, cambMap, locale)}</span>
                         </div>
-                      </div>
+                        <span className="vx-slot-tail">
+                          <ChevronDown />
+                        </span>
+                      </button>
                     </div>
+
+                    {openSlot === `${scene.id}:avatar` && (
+                      <div className="dark vx-panel">
+                        <AvatarPicker
+                          locale={locale}
+                          avatar={sceneChar.avatar}
+                          orientation={blueprint.orientation}
+                          required
+                          onChange={(avatar) => updateCharacter(charIdx, { avatar })}
+                        />
+                      </div>
+                    )}
+                    {openSlot === `${scene.id}:voice` && (
+                      <div className="dark vx-panel">
+                        <VoicePicker
+                          value={{ voiceId: sceneChar.voice.voiceId, lang: sceneChar.voice.lang }}
+                          onChange={(sel) => updateCharacter(charIdx, { voice: { ...sceneChar.voice, ...sel } })}
+                          locale={locale}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <div className="vx-spec">
-                  <span className="vx-chip">
-                    <Clock />
-                    {scene.durationSec}s
+                  <span className="vx-step" title={t("Үргэлжлэх хугацаа", "Duration")}>
+                    <button
+                      type="button"
+                      aria-label={t("Богиносгох", "Shorter")}
+                      disabled={scene.durationSec <= 3}
+                      onClick={() => patchScene(scene.id, { durationSec: Math.max(3, scene.durationSec - 1) })}
+                    >
+                      <Minus />
+                    </button>
+                    <span className="vx-step-v">{scene.durationSec}s</span>
+                    <button
+                      type="button"
+                      aria-label={t("Уртасгах", "Longer")}
+                      disabled={scene.durationSec >= 15}
+                      onClick={() => patchScene(scene.id, { durationSec: Math.min(15, scene.durationSec + 1) })}
+                    >
+                      <Plus />
+                    </button>
                   </span>
-                  <span className="vx-chip">
+                  <button
+                    type="button"
+                    className="vx-chip vx-act"
+                    onClick={cycleOrientation}
+                    title={t("Хэлбэр солих", "Change aspect ratio")}
+                  >
                     <RectangleHorizontal />
                     {blueprint.orientation}
-                  </span>
-                  <span className="vx-chip">
-                    <Globe />
-                    {langChip}
-                  </span>
+                  </button>
+                  {scene.type === "a_roll" ? (
+                    <button
+                      type="button"
+                      className="vx-chip vx-act"
+                      onClick={() => toggleSlot(`${scene.id}:voice`)}
+                      title={t("Хэл / хоолой солих", "Change language / voice")}
+                    >
+                      <Globe />
+                      {langTagOf(sceneChar.voice.lang)}
+                    </button>
+                  ) : (
+                    <span className="vx-chip">
+                      <Globe />
+                      {langChip}
+                    </span>
+                  )}
                   {blueprint.captions && (
                     <span className="vx-chip">
                       <Captions />

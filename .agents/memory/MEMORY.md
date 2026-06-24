@@ -1,1 +1,2 @@
 - [Generation run cache key](vexoai-run-cache-key.md) — VexoAI `runKeyOf` must include every cast-affecting field or edited scenes reuse stale paid footage.
+- [Spoken-language source of truth](vexoai-language-source-of-truth.md) — VexoAI language/locale comes from `voice.lang`, not `blueprint.language`; change language via the voice picker.

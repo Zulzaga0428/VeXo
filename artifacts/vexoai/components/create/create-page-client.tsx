@@ -223,6 +223,7 @@ export function CreatePageClient() {
                   locale={locale}
                   blueprint={blueprint}
                   generating={gen.phase === "running"}
+                  onChange={setBlueprint}
                   onEdit={() => setPlanMode("edit")}
                   onGenerate={handleGenerate}
                 />

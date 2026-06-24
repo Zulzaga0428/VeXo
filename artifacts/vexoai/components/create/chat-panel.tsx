@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Loader2, Plus } from "lucide-react"
+import { ArrowUp, BrainCog, ChevronDown, ChevronUp, Loader2, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatMessage } from "@/hooks/use-blueprint-chat"
 
@@ -9,7 +9,7 @@ interface ChatPanelProps {
   locale: "mn" | "en"
   messages: ChatMessage[]
   thinking: boolean
-  statusText?: string | null
+  statusSteps?: string[]
   hasBlueprint: boolean
   disabled?: boolean
   onSubmit: (text: string) => void
@@ -21,7 +21,7 @@ export function ChatPanel({
   locale,
   messages,
   thinking,
-  statusText,
+  statusSteps = [],
   hasBlueprint,
   disabled = false,
   onSubmit,
@@ -30,12 +30,18 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
   const [input, setInput] = useState("")
+  const [stepsOpen, setStepsOpen] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
-  }, [messages, thinking])
+  }, [messages, thinking, statusSteps])
+
+  // Expand steps panel whenever a new step arrives.
+  useEffect(() => {
+    if (statusSteps.length > 0) setStepsOpen(true)
+  }, [statusSteps.length])
 
   // Auto-grow the input as the user types: reset to natural height, then expand
   // to fit the content (capped — only scrolls when the message gets very long).
@@ -136,11 +142,39 @@ export function ChatPanel({
         ))}
 
         {thinking && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span className="transition-all duration-300">
-              {statusText ?? t("Бодож байна…", "Thinking…")}
-            </span>
+          <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-white/[0.03]">
+            {/* Header row — always visible */}
+            <button
+              onClick={() => setStepsOpen((o) => !o)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-white/[0.04]"
+            >
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+              <span className="flex-1 text-xs font-medium text-muted-foreground">
+                {statusSteps.length === 0
+                  ? t("Бодож байна…", "Thinking…")
+                  : stepsOpen
+                    ? t("Нуух", "Show less")
+                    : t("Харуулах", "Show more")}
+              </span>
+              {statusSteps.length > 0 &&
+                (stepsOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                ))}
+            </button>
+
+            {/* Steps list */}
+            {stepsOpen && statusSteps.length > 0 && (
+              <div className="border-t border-border/40 px-3 py-2 space-y-1.5">
+                {statusSteps.map((step, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <BrainCog className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent/70" />
+                    <span className="text-xs text-muted-foreground leading-relaxed">{step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

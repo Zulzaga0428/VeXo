@@ -33,7 +33,7 @@ export function useBlueprintChat(opts: {
   const { locale, getBlueprint, onBlueprint } = opts
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [thinking, setThinking] = useState(false)
-  const [statusText, setStatusText] = useState<string | null>(null)
+  const [statusSteps, setStatusSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const pendingIdeaRef = useRef<string | null>(null)
 
@@ -44,14 +44,14 @@ export function useBlueprintChat(opts: {
   const buildPlan = useCallback(
     async (idea: string) => {
       setThinking(true)
-      setStatusText(null)
+      setStatusSteps([])
       setError(null)
       const current = getBlueprint() ?? undefined
 
       await streamBlueprint(
         { idea, locale, model: current?.model ?? "standard", currentBlueprint: current },
         {
-          onStatus: (msg) => setStatusText(msg),
+          onStatus: (msg) => setStatusSteps((prev) => [...prev, msg]),
           onDone: (data) => {
             const bp = normalizeBlueprint(data.blueprint, {
               fallbackLanguage: locale,
@@ -78,7 +78,6 @@ export function useBlueprintChat(opts: {
       )
 
       setThinking(false)
-      setStatusText(null)
     },
     [locale, getBlueprint, onBlueprint, push],
   )
@@ -138,8 +137,9 @@ export function useBlueprintChat(opts: {
     setMessages([])
     setError(null)
     setThinking(false)
-    setStatusText(null)
+    setStatusSteps([])
   }, [])
 
-  return { messages, thinking, statusText, error, submit, answerClarify, reset }
+  return { messages, thinking, statusSteps, error, submit, answerClarify, reset }
+
 }

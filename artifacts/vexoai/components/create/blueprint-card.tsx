@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { newSceneId, recomputeDuration } from "@/lib/blueprint";
-import { estimateSceneCredits } from "@/lib/blueprint-costs";
+import { estimateSceneCredits, estimateBlueprintCredits } from "@/lib/blueprint-costs";
 import { uploadImage, generateImage } from "@/lib/create-api-client";
 
 // VexoAI — multi-scene Blueprint editor.
@@ -276,6 +276,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
   const N = scenes.length;
   const totalDur = scenes.reduce((a, s) => a + s.duration, 0);
   const maxDur = bp.model === "veo3" ? 8 : 15;
+  const totalCredits = estimateBlueprintCredits(bp);
   const rScene = Math.min(N, Math.floor((pct / 100) * N) + 1);
   const stageLabel = STAGES[Math.min(STAGES.length - 1, Math.floor((pct / 100) * STAGES.length))];
 
@@ -554,7 +555,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
               </div>
 
               <div className="vx-actions">
-                <button className="vx-btn vx-gen" onClick={start}>Generate · {N} scene<Svg d={I.arrow} w={2.4} /></button>
+                <button className="vx-btn vx-gen" onClick={start}>{tr("Үүсгэх", "Generate")} · {N} scene · {totalCredits} cr<Svg d={I.arrow} w={2.4} /></button>
               </div>
             </>
           )}

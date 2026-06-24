@@ -54,6 +54,29 @@ const ESTIMATE_CREDITS_TOOL: Anthropic.Tool = {
   },
 }
 
+// Step 5 of Agentic Planner: validate_scene lets Claude check each proposed
+// scene for rule violations (duration cap, script length, English visualPrompt)
+// before committing to the final blueprint, so it can self-correct.
+const VALIDATE_SCENE_TOOL: Anthropic.Tool = {
+  name: "validate_scene",
+  description:
+    "Check a single proposed scene for rule violations. " +
+    "Call this for EVERY scene (in parallel) after planning them but before writing the blueprint. " +
+    "Fix any reported issues before returning the final JSON.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      scene_index: { type: "number", description: "0-based index for reference" },
+      type: { type: "string", enum: ["a_roll", "b_roll"] },
+      script: { type: "string", description: "Spoken text (empty string if none)" },
+      visual_prompt: { type: "string", description: "Scene visualPrompt (must be English)" },
+      duration_sec: { type: "number" },
+      model: { type: "string", enum: ["standard", "veo3"] },
+    },
+    required: ["scene_index", "type", "script", "visual_prompt", "duration_sec", "model"],
+  },
+}
+
 // The agent turns a plain-language idea into a full, editable Video Plan
 // (blueprint). Unlike the old plan-episode (a bare scene list), this returns the
 // whole plan: title, orientation, model, captions, and typed scenes (a_roll
@@ -201,7 +224,7 @@ export async function POST(req: NextRequest) {
           const msgs: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userContent }]
           let message: Anthropic.Beta.BetaMessage | null = null
 
-          for (let turn = 0; turn < 5; turn++) {
+          for (let turn = 0; turn < 6; turn++) {
             message = await withRetry(() =>
               anthropic.beta.messages.create({
                 model: "claude-sonnet-4-5",
@@ -209,7 +232,7 @@ export async function POST(req: NextRequest) {
                 thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
                 betas: ["interleaved-thinking-2025-05-14"],
                 system: buildSystemPrompt(locale, safeModel),
-                tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL],
+                tools: [GET_VOICES_TOOL, ESTIMATE_CREDITS_TOOL, VALIDATE_SCENE_TOOL],
                 messages: msgs,
               }),
             )
@@ -224,6 +247,8 @@ export async function POST(req: NextRequest) {
             msgs.push({ role: "assistant", content: message.content })
 
             // Emit a status event for each tool call so the UI can name them.
+            // Collapse multiple validate_scene calls into one status message.
+            let hasValidate = false
             for (const tb of toolBlocks) {
               if (tb.name === "get_voices") {
                 send("status", {
@@ -233,7 +258,14 @@ export async function POST(req: NextRequest) {
                 send("status", {
                   message: locale === "mn" ? "Кредит тооцоолж байна…" : "Estimating credits…",
                 })
+              } else if (tb.name === "validate_scene") {
+                hasValidate = true
               }
+            }
+            if (hasValidate) {
+              send("status", {
+                message: locale === "mn" ? "Scene бүрийг шалгаж байна…" : "Validating scenes…",
+              })
             }
 
             const toolResults: Anthropic.Beta.BetaToolResultBlockParam[] = await Promise.all(
@@ -283,6 +315,70 @@ export async function POST(req: NextRequest) {
                     type: "tool_result" as const,
                     tool_use_id: toolBlock.id,
                     content: JSON.stringify({ total, breakdown, stitchIncluded: safeScenes.length > 1 }),
+                  }
+                }
+
+                if (toolBlock.name === "validate_scene") {
+                  const inp = toolBlock.input as {
+                    scene_index?: number
+                    type?: string
+                    script?: string
+                    visual_prompt?: string
+                    duration_sec?: number
+                    model?: string
+                  }
+                  const issues: string[] = []
+                  const bpModel = inp.model === "veo3" ? "veo3" : "standard"
+                  const durationCap = bpModel === "veo3" ? 8 : 15
+                  const dur = typeof inp.duration_sec === "number" ? inp.duration_sec : 0
+
+                  // Duration cap
+                  if (dur > durationCap) {
+                    issues.push(
+                      `durationSec ${dur}s exceeds ${bpModel} cap of ${durationCap}s — reduce to ≤${durationCap}s`,
+                    )
+                  }
+                  if (dur < 3) {
+                    issues.push(`durationSec ${dur}s is too short — minimum 3s`)
+                  }
+
+                  // Script length vs duration (≈2.5 words/sec spoken pace)
+                  const script = inp.script ?? ""
+                  const wordCount = script.trim() ? script.trim().split(/\s+/).length : 0
+                  const maxWords = Math.ceil(dur * 2.5)
+                  if (wordCount > maxWords) {
+                    issues.push(
+                      `script has ${wordCount} words but ${dur}s allows ~${maxWords} words at normal speaking pace — shorten the script`,
+                    )
+                  }
+
+                  // visualPrompt must be English (ASCII-dominant)
+                  const vp = inp.visual_prompt ?? ""
+                  if (vp.trim()) {
+                    const asciiCount = [...vp].filter((c) => c.charCodeAt(0) < 128).length
+                    const ratio = asciiCount / vp.length
+                    if (ratio < 0.8) {
+                      issues.push(`visualPrompt appears to contain non-English text — write it in English only`)
+                    }
+                  } else {
+                    issues.push(`visualPrompt is empty — provide a descriptive English scene description`)
+                  }
+
+                  // b_roll should have empty script
+                  if (inp.type === "b_roll" && wordCount > 0) {
+                    issues.push(
+                      `b_roll scene has a script ("${script.slice(0, 40)}…") — b_roll is cinematic footage with no voiceover; move spoken lines to an a_roll scene or clear the script`,
+                    )
+                  }
+
+                  return {
+                    type: "tool_result" as const,
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify(
+                      issues.length
+                        ? { valid: false, scene_index: inp.scene_index, issues }
+                        : { valid: true, scene_index: inp.scene_index },
+                    ),
                   }
                 }
 

@@ -54,11 +54,6 @@ export interface BlueprintScene {
   // Which character speaks in this scene (a_roll only).
   // 0 / undefined = primary (avatar+voice); 1+ = characters[n-1]
   characterIdx?: number
-  // b_roll only: optionally feature a specific person in the footage. When set
-  // with an imageUrl, the scene is generated image-to-video from this avatar so
-  // the chosen person appears in the shot. Narration (if any) still uses the
-  // primary voice — b_roll scenes never pick their own voice.
-  avatar?: AvatarRef
 
   // ── runtime fields, filled during generation (not sent by the agent) ──
   status?: SceneStatus

@@ -10,7 +10,6 @@ import type { VideoBlueprint } from "@/lib/blueprint"
 import { ChatPanel } from "@/components/create/chat-panel"
 import { ArtifactsPanel, type CreateView } from "@/components/create/artifacts-panel"
 import { BlueprintEditor } from "@/components/create/blueprint-editor"
-import { BlueprintViewfinder } from "@/components/create/blueprint-viewfinder"
 import { GenerationTimeline } from "@/components/create/generation-timeline"
 import { VideoResult } from "@/components/create/video-result"
 
@@ -18,9 +17,6 @@ export function CreatePageClient() {
   const searchParams = useSearchParams()
   const [blueprint, setBlueprint] = useState<VideoBlueprint | null>(null)
   const [view, setView] = useState<CreateView>("plan")
-  // The plan view has a read-only cinematic "viewfinder" preview (default) and
-  // an editable mode. A freshly-arrived blueprint always opens in preview.
-  const [planMode, setPlanMode] = useState<"preview" | "edit">("preview")
   const [navOpen, setNavOpen] = useState(false)
   const [chatWidth, setChatWidth] = useState(320)
   const [artifactsCollapsed, setArtifactsCollapsed] = useState(false)
@@ -62,7 +58,6 @@ export function CreatePageClient() {
   const onBlueprint = useCallback((bp: VideoBlueprint) => {
     setBlueprint(bp)
     setView("plan")
-    setPlanMode("preview")
   }, [])
 
   // Skip run recovery when arriving with a fresh idea from the dashboard — that's
@@ -218,24 +213,13 @@ export function CreatePageClient() {
                 />
               )
             ) : blueprint ? (
-              planMode === "preview" ? (
-                <BlueprintViewfinder
-                  locale={locale}
-                  blueprint={blueprint}
-                  generating={gen.phase === "running"}
-                  onChange={setBlueprint}
-                  onGenerate={handleGenerate}
-                />
-              ) : (
-                <BlueprintEditor
-                  locale={locale}
-                  blueprint={blueprint}
-                  generating={gen.phase === "running"}
-                  onChange={setBlueprint}
-                  onGenerate={handleGenerate}
-                  onBack={() => setPlanMode("preview")}
-                />
-              )
+              <BlueprintEditor
+                locale={locale}
+                blueprint={blueprint}
+                generating={gen.phase === "running"}
+                onChange={setBlueprint}
+                onGenerate={handleGenerate}
+              />
             ) : (
               <EmptyState locale={locale} />
             )}

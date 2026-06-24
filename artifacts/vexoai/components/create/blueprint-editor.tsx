@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { ArrowLeft, Clapperboard, Film, Mic, Plus, Sparkles, Trash2, User, Wand2, X } from "lucide-react"
+import { Clapperboard, Film, Mic, Plus, Sparkles, Trash2, User, Wand2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   newSceneId,
@@ -23,8 +23,6 @@ interface BlueprintEditorProps {
   generating: boolean
   onChange: (bp: VideoBlueprint) => void
   onGenerate: () => void
-  // Return to the read-only cinematic preview.
-  onBack?: () => void
 }
 
 const ORIENTATIONS: { value: Orientation; labelMn: string; labelEn: string }[] = [
@@ -33,7 +31,7 @@ const ORIENTATIONS: { value: Orientation; labelMn: string; labelEn: string }[] =
   { value: "1:1", labelMn: "Дөрвөлжин", labelEn: "Square" },
 ]
 
-export function BlueprintEditor({ locale, blueprint, generating, onChange, onGenerate, onBack }: BlueprintEditorProps) {
+export function BlueprintEditor({ locale, blueprint, generating, onChange, onGenerate }: BlueprintEditorProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
 
   const credits = useMemo(() => estimateBlueprintCredits(blueprint), [blueprint])
@@ -139,16 +137,6 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
-
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition hover:text-accent"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {t("Урьдчилан харах", "Back to preview")}
-          </button>
-        )}
 
         {/* Title */}
         <input

@@ -51,23 +51,12 @@ function runKeyOf(bp: VideoBlueprint): string {
     orientation: bp.orientation,
     avatar: bp.avatar.imageUrl ?? null,
     voice: bp.voice,
-    // Extra characters (per-scene cast) — their avatar/voice must invalidate the
-    // cache too, otherwise editing a non-primary actor reuses stale footage.
-    characters: (bp.characters ?? []).map((c) => ({
-      avatar: c.avatar.imageUrl ?? null,
-      voice: c.voice,
-    })),
     scenes: bp.scenes.map((s) => ({
       id: s.id,
       type: s.type,
       script: s.script.trim(),
       visual: s.visualPrompt.trim(),
       dur: s.durationSec,
-      // Which actor speaks — switching a scene's character must regenerate it.
-      char: s.characterIdx ?? 0,
-      // b_roll featured avatar — changing it switches text↔image generation,
-      // so it must invalidate cached footage too.
-      bAvatar: s.avatar?.imageUrl ?? null,
     })),
   })
 }
@@ -301,27 +290,21 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
             if (cancelRef.current) return
 
             // 2. Submit the video job — skip if one was already accepted.
-            //    If the user picked an avatar for this b_roll scene, drive it
-            //    image-to-video so that person appears in the footage; otherwise
-            //    plain text-to-video.
-            const featured = scene.avatar?.imageUrl
-            const mode: "image" | "text" = featured ? "image" : "text"
             let job: SceneJob
             if (st.job) {
               job = st.job
             } else {
               patch(scene.id, { status: "video", progress: 30 })
               const gv = await generateVideo({
-                mode,
+                mode: "text",
                 prompt,
-                imageUrl: featured,
                 duration: scene.durationSec,
                 aspectRatio: bp.orientation,
                 model: bp.model,
                 generateAudio: false,
               })
               if (!gv.ok) throw new Error(gv.error)
-              job = { kind: "video", requestId: gv.data.requestId, model: bp.model, mode }
+              job = { kind: "video", requestId: gv.data.requestId, model: bp.model, mode: "text" }
               st = { ...st, job }
               setState(st)
             }

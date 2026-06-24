@@ -51,12 +51,20 @@ function runKeyOf(bp: VideoBlueprint): string {
     orientation: bp.orientation,
     avatar: bp.avatar.imageUrl ?? null,
     voice: bp.voice,
+    // Extra characters (per-scene cast) — their avatar/voice must invalidate the
+    // cache too, otherwise editing a non-primary actor reuses stale footage.
+    characters: (bp.characters ?? []).map((c) => ({
+      avatar: c.avatar.imageUrl ?? null,
+      voice: c.voice,
+    })),
     scenes: bp.scenes.map((s) => ({
       id: s.id,
       type: s.type,
       script: s.script.trim(),
       visual: s.visualPrompt.trim(),
       dur: s.durationSec,
+      // Which actor speaks — switching a scene's character must regenerate it.
+      char: s.characterIdx ?? 0,
     })),
   })
 }

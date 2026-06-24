@@ -1,4 +1,1 @@
-- [Supabase deploy constraints](supabase-deploy-constraints.md) — VexoAI has no migration runner / no direct DB; new SQL (RPCs, schema) must be run manually in the Supabase SQL Editor.
-- [Credits atomicity invariant](credits-invariant.md) — credit mutations must be atomic+idempotent DB RPCs (never client read-modify-write); poll endpoints/sweeps refund/settle by requestId-keyed RPC (exactly-once cross-instance); lipsync map is cache-only.
-- [Reconcile sweep trigger](reconcile-sweep-trigger.md) — reconcile sweep runs on a schedule via in-process timer in Next `instrumentation.ts` (prod default) plus the `/api/cron/reconcile-charges` endpoint; safe multi-instance via idempotent RPCs.
-- [Supabase + Next.js in Replit iframe preview](supabase-replit-iframe-preview.md) — login (SameSite=None cookies) and HMR (allowedDevOrigins) both break in the cross-site preview iframe; fix dev-only.
+- [Generation run cache key](vexoai-run-cache-key.md) — VexoAI `runKeyOf` must include every cast-affecting field or edited scenes reuse stale paid footage.

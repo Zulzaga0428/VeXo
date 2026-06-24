@@ -1,21 +1,253 @@
 "use client"
 
-import { useMemo } from "react"
-import { Clapperboard, Film, Mic, Plus, Sparkles, Trash2, User, Wand2, X } from "lucide-react"
+import { useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
   newSceneId,
   recomputeDuration,
-  type BlueprintModel,
   type BlueprintScene,
   type Character,
   type Orientation,
-  type SceneType,
   type VideoBlueprint,
 } from "@/lib/blueprint"
 import { estimateBlueprintCredits } from "@/lib/blueprint-costs"
 import { VoicePicker } from "@/components/studio-voice-picker"
 import { AvatarPicker } from "@/components/create/avatar-picker"
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+.vx-card{
+  --ink:#08090C;--surface:#0F1116;--surface-2:#14171E;--inset:#0C0E13;
+  --line:rgba(255,255,255,0.08);--line-strong:rgba(255,255,255,0.16);
+  --tungsten:#F3B279;--teal:#2DD4BF;--teal-deep:#0d9488;
+  --text:#ECEEF1;--muted:#8B919C;--faint:#565C66;--vg:#55AA5B;--vr:#B80D0D;
+  width:100%;background:linear-gradient(180deg,var(--surface) 0%,#0D0F14 100%);
+  border:1px solid var(--line);border-radius:22px;
+  box-shadow:0 40px 80px -20px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.02) inset;
+  font-family:'Manrope',system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;
+}
+.vx-card *{box-sizing:border-box}
+.vx-clip{border-radius:22px;overflow:hidden}
+
+/* HUD */
+.vx-hud{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;
+  color:var(--faint);border-bottom:1px solid var(--line)}
+.vx-hg{display:flex;align-items:center;gap:10px}
+.vx-rec{display:inline-flex;align-items:center;gap:7px;color:#ff5a52}
+.vx-rec .vx-dot{width:8px;height:8px;border-radius:50%;background:currentColor;
+  box-shadow:0 0 10px currentColor;animation:vxblink 1.2s steps(1) infinite}
+@keyframes vxblink{50%{opacity:0.18}}
+.vx-sep{color:var(--line-strong)}.vx-tag{color:var(--muted)}
+
+/* Viewfinder */
+.vx-vf{position:relative;margin:16px;height:220px;border-radius:14px;overflow:hidden;cursor:default}
+.vx-stage{position:absolute;inset:0;
+  background:radial-gradient(140% 120% at 78% 18%,rgba(243,178,121,0.55),transparent 42%),
+    radial-gradient(120% 100% at 20% 90%,rgba(94,79,63,0.6),transparent 50%),
+    linear-gradient(135deg,#2a2620 0%,#17161b 55%,#0c0c10 100%)}
+.vx-bokeh{position:absolute;border-radius:50%;opacity:0.5}
+.vx-b1{width:90px;height:90px;top:24px;right:60px;background:rgba(255,214,170,0.55);filter:blur(14px)}
+.vx-b2{width:46px;height:46px;top:90px;right:30px;background:rgba(255,224,190,0.45);filter:blur(8px)}
+.vx-b3{width:30px;height:30px;top:60px;right:140px;background:rgba(255,205,160,0.4);filter:blur(8px)}
+.vx-b4{width:120px;height:120px;bottom:-30px;left:-20px;background:rgba(120,95,70,0.4);filter:blur(22px)}
+.vx-vig{position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,0.1) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0.55) 78%,rgba(0,0,0,0.82) 100%)}
+.vx-br{position:absolute;width:26px;height:26px;border:2px solid rgba(255,255,255,0.85)}
+.vx-tl{border-right:none;border-bottom:none;border-top-left-radius:3px}
+.vx-tr{border-left:none;border-bottom:none;border-top-right-radius:3px}
+.vx-bl{border-right:none;border-top:none;border-bottom-left-radius:3px}
+.vx-brr{border-left:none;border-top:none;border-bottom-right-radius:3px}
+.vx-slate{position:absolute;top:18px;left:50%;transform:translateX(-50%);
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.14em;
+  color:rgba(255,255,255,0.78);text-transform:uppercase;white-space:nowrap}
+.vx-title{position:absolute;left:0;right:0;bottom:36px;text-align:center;
+  font-family:'Oswald',sans-serif;font-weight:600;line-height:0.94;letter-spacing:-0.01em;
+  text-transform:uppercase;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,0.7);margin:0;padding:0 28px}
+.vx-title-placeholder{opacity:0.35}
+.vx-tc{position:absolute;bottom:16px;right:20px;font-family:'JetBrains Mono',monospace;
+  font-size:12px;letter-spacing:0.08em;color:var(--teal)}
+.vx-ratio-btn{position:absolute;bottom:16px;left:20px;font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:0.12em;color:rgba(255,255,255,0.55);background:none;border:none;
+  cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .15s}
+.vx-ratio-btn:hover{color:var(--teal);background:rgba(45,212,191,0.08)}
+
+/* Title row */
+.vx-title-row{display:flex;align-items:center;gap:10px;padding:12px 20px 0}
+.vx-title-input{flex:1;background:transparent;border:none;outline:none;
+  font-family:'Oswald',sans-serif;font-size:18px;font-weight:600;letter-spacing:0.01em;
+  color:var(--text);text-transform:uppercase;placeholder-color:var(--faint)}
+.vx-title-input::placeholder{color:var(--faint);font-weight:400;text-transform:none;font-family:'Manrope',sans-serif;font-size:14px}
+.vx-model-btn{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
+  padding:5px 10px;border-radius:8px;border:1px solid var(--line);
+  background:transparent;color:var(--faint);cursor:pointer;transition:all .15s;white-space:nowrap}
+.vx-model-btn:hover{color:var(--teal);border-color:rgba(45,212,191,0.3)}
+.vx-model-btn--active{color:var(--teal);border-color:rgba(45,212,191,0.35);background:rgba(45,212,191,0.06)}
+
+/* Body */
+.vx-body{padding:14px 20px 20px}
+.vx-eye{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;
+  color:var(--teal-deep);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.vx-eye span:first-child{width:5px;height:5px;background:var(--teal);border-radius:1px;
+  box-shadow:0 0 8px var(--teal);display:inline-block;flex-shrink:0}
+.vx-scene{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,0.012);margin-bottom:12px}
+.vx-shd{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none}
+.vx-shd.open{border-bottom:1px solid var(--line)}
+.vx-snum{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--teal);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.vx-snum span:first-child{width:6px;height:6px;background:var(--teal);border-radius:1px;
+  box-shadow:0 0 8px var(--teal);display:inline-block}
+.vx-type-badge{font-size:9.5px;padding:2px 7px;border-radius:5px;
+  background:rgba(45,212,191,0.1);color:var(--teal);letter-spacing:0.08em;margin-left:2px}
+.vx-ssum{color:var(--faint);font-size:12px;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.vx-shp{margin-left:auto;display:flex;gap:4px}
+.vx-ib{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.vx-ib:hover{color:var(--text);border-color:var(--line-strong)}
+.vx-ib.del:hover{color:#ff5a52;border-color:rgba(255,90,82,0.4)}
+.vx-ib svg{width:14px;height:14px}
+.vx-sbd{padding:2px 14px 14px}
+
+/* Type toggle */
+.vx-type-row{display:flex;gap:6px;padding:10px 0 4px}
+.vx-type-btn{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
+  padding:5px 10px;border-radius:8px;border:1px solid var(--line);
+  background:transparent;color:var(--faint);cursor:pointer;transition:all .15s}
+.vx-type-btn:hover{color:var(--text);border-color:var(--line-strong)}
+.vx-type-btn.active{color:var(--teal);border-color:rgba(45,212,191,0.35);background:rgba(45,212,191,0.07)}
+.vx-type-btn svg{width:12px;height:12px}
+
+/* Script | Style */
+.vx-prow{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:10px 0 4px}
+.vx-ta{width:100%;min-height:80px;resize:vertical;background:var(--inset);border:1px solid var(--line);
+  border-radius:11px;padding:10px 12px;color:#D6DAE0;font-family:'Manrope',sans-serif;
+  font-size:12.5px;line-height:1.55;outline:none;transition:border-color .15s}
+.vx-ta:focus{border-color:rgba(45,212,191,0.45)}
+.vx-ta::placeholder{color:var(--faint)}
+
+/* Cast */
+.vx-cast{padding:10px 0 4px}
+.vx-cast-inner{display:flex;flex-direction:column;gap:10px;padding-top:8px}
+
+/* Specs */
+.vx-spec{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 0 2px}
+.vx-chip{display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:0.04em;color:var(--muted);padding:5px 10px;
+  border-radius:8px;background:var(--surface-2);border:1px solid var(--line)}
+.vx-chip svg{width:11px;height:11px;opacity:0.7}
+.vx-credit{color:var(--teal);background:rgba(45,212,191,0.07);border-color:rgba(45,212,191,0.22)}
+.vx-credit svg{opacity:1}
+.vx-step{display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;
+  font-size:10.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--line);
+  border-radius:8px;overflow:hidden}
+.vx-step b{padding:0 7px;min-width:30px;text-align:center}
+.vx-step button{width:24px;height:26px;background:transparent;border:none;color:var(--muted);
+  cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.vx-step button:hover{background:rgba(255,255,255,0.06);color:var(--teal)}
+.vx-step button:disabled{opacity:0.3;cursor:default}
+
+/* Add scene */
+.vx-addscene{width:100%;height:44px;border:1.5px dashed var(--line-strong);border-radius:14px;
+  background:transparent;color:var(--muted);font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.vx-addscene:hover{color:var(--teal);border-color:rgba(45,212,191,0.5)}
+.vx-addscene svg{width:15px;height:15px}
+
+/* Warning */
+.vx-warn{padding:4px 20px 0;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:10.5px;letter-spacing:0.05em;color:#ff5a52}
+
+/* Actions */
+.vx-actions{display:flex;gap:10px;padding:16px 20px 20px;border-top:1px solid var(--line)}
+.vx-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;
+  border-radius:13px;cursor:pointer;border:1px solid transparent;
+  font-family:'Manrope',sans-serif;font-weight:700;font-size:13.5px;letter-spacing:0.01em;transition:all .18s ease}
+.vx-gen{flex:1;background:linear-gradient(135deg,var(--teal) 0%,var(--teal-deep) 100%);
+  color:#04201c;box-shadow:0 8px 24px -10px rgba(45,212,191,0.45);
+  text-transform:uppercase;letter-spacing:0.06em;font-weight:800}
+.vx-gen:hover{filter:brightness(1.07)}
+.vx-gen:disabled{opacity:0.5;cursor:default;filter:none;box-shadow:none}
+.vx-btn svg{width:16px;height:16px}
+.vx-spin{width:15px;height:15px;border:2px solid rgba(4,32,28,0.35);border-top-color:#04201c;
+  border-radius:50%;animation:vxsp .7s linear infinite;flex-shrink:0}
+@keyframes vxsp{to{transform:rotate(360deg)}}
+.vx-backdrop{position:fixed;inset:0;z-index:55}
+@media(max-width:560px){.vx-prow{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important}}
+`
+
+const Svg = ({
+  d,
+  w = 2,
+  s,
+  ...p
+}: {
+  d: React.ReactNode
+  w?: number
+  s?: React.CSSProperties
+  [k: string]: unknown
+}) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={w}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={s}
+    {...p}
+  >
+    {d}
+  </svg>
+)
+
+const I = {
+  arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
+  chev: <path d="M6 9l6 6 6-6" />,
+  chevUp: <path d="M18 15l-6-6-6 6" />,
+  x: <path d="M6 6l12 12M18 6L6 18" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  film: (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M7 5v14M17 5v14M2 10h20M2 15h20" />
+    </>
+  ),
+  mic: (
+    <>
+      <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+    </>
+  ),
+  coin: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v8M9 10h4.5a1.5 1.5 0 0 1 0 3H9h5" />
+    </>
+  ),
+}
+
+const RATIO_LBL: Record<string, string> = {
+  "16:9": "LANDSCAPE",
+  "9:16": "PORTRAIT",
+  "1:1": "SQUARE",
+}
+const RB: Record<string, { x: string; y: string }> = {
+  "16:9": { x: "7%", y: "16%" },
+  "9:16": { x: "33%", y: "6%" },
+  "1:1": { x: "25%", y: "8%" },
+}
+const ORIENTATIONS: Orientation[] = ["9:16", "16:9", "1:1"]
 
 interface BlueprintEditorProps {
   locale: "mn" | "en"
@@ -25,18 +257,18 @@ interface BlueprintEditorProps {
   onGenerate: () => void
 }
 
-const ORIENTATIONS: { value: Orientation; labelMn: string; labelEn: string }[] = [
-  { value: "9:16", labelMn: "Босоо", labelEn: "Portrait" },
-  { value: "16:9", labelMn: "Хэвтээ", labelEn: "Landscape" },
-  { value: "1:1", labelMn: "Дөрвөлжин", labelEn: "Square" },
-]
-
-export function BlueprintEditor({ locale, blueprint, generating, onChange, onGenerate }: BlueprintEditorProps) {
+export function BlueprintEditor({
+  locale,
+  blueprint,
+  generating,
+  onChange,
+  onGenerate,
+}: BlueprintEditorProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
+  const [collapsedScenes, setCollapsedScenes] = useState<Set<string>>(new Set())
 
   const credits = useMemo(() => estimateBlueprintCredits(blueprint), [blueprint])
 
-  // All characters: index 0 = primary (bp.avatar + bp.voice), 1+ = bp.characters
   const allCharacters: Character[] = useMemo(
     () => [
       { id: "__primary__", avatar: blueprint.avatar, voice: blueprint.voice },
@@ -64,38 +296,10 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
       if (p.voice !== undefined) patch({ voice: p.voice })
     } else {
       const chars = [...(blueprint.characters ?? [])]
-      if (!chars[idx - 1]) return // guard against out-of-range index
+      if (!chars[idx - 1]) return
       chars[idx - 1] = { ...chars[idx - 1], ...p }
       patch({ characters: chars })
     }
-  }
-
-  // Add a new character AND assign it to the given scene — in a single atomic
-  // update so the two patches don't clobber each other off the same snapshot.
-  const addCharacterToScene = (sceneId: string) => {
-    const newChar: Character = {
-      id: newSceneId(),
-      avatar: { type: "none" },
-      voice: { ...blueprint.voice },
-    }
-    const newChars = [...(blueprint.characters ?? []), newChar]
-    const newIdx = newChars.length // new char's index in allCharacters (primary at 0)
-    const scenes = blueprint.scenes.map((s) =>
-      s.id === sceneId ? { ...s, characterIdx: newIdx } : s,
-    )
-    onChange({ ...blueprint, characters: newChars, scenes })
-  }
-
-  const removeCharacter = (idx: number) => {
-    if (idx === 0) return
-    const chars = [...(blueprint.characters ?? [])]
-    chars.splice(idx - 1, 1)
-    const scenes = blueprint.scenes.map((s) => {
-      if ((s.characterIdx ?? 0) === idx) return { ...s, characterIdx: 0 }
-      if ((s.characterIdx ?? 0) > idx) return { ...s, characterIdx: (s.characterIdx ?? 0) - 1 }
-      return s
-    })
-    patch({ characters: chars, scenes })
   }
 
   const patchScene = (id: string, p: Partial<BlueprintScene>) => {
@@ -123,353 +327,320 @@ export function BlueprintEditor({ locale, blueprint, generating, onChange, onGen
     onChange({ ...blueprint, scenes, durationSec: recomputeDuration({ ...blueprint, scenes }) })
   }
 
-  const orientationIdx = ORIENTATIONS.findIndex((o) => o.value === blueprint.orientation)
-  const currentOrientation = ORIENTATIONS[Math.max(0, orientationIdx)]
+  const toggleCollapse = (id: string) =>
+    setCollapsedScenes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
   const cycleOrientation = () => {
-    const next = ORIENTATIONS[(orientationIdx + 1) % ORIENTATIONS.length]
-    patch({ orientation: next.value })
+    const idx = ORIENTATIONS.indexOf(blueprint.orientation)
+    patch({ orientation: ORIENTATIONS[(idx + 1) % ORIENTATIONS.length] })
   }
 
-  const cycleModel = () => {
-    patch({ model: blueprint.model === "standard" ? "veo3" : "standard" })
+  const ins = RB[blueprint.orientation] ?? RB["16:9"]
+  const brk = {
+    tl: { top: ins.y, left: ins.x },
+    tr: { top: ins.y, right: ins.x },
+    bl: { bottom: ins.y, left: ins.x },
+    brr: { bottom: ins.y, right: ins.x },
   }
+  const N = blueprint.scenes.length
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
+    <div className="vx-card">
+      <style>{CSS}</style>
 
-        {/* Title */}
-        <input
-          value={blueprint.title}
-          onChange={(e) => patch({ title: e.target.value })}
-          className="w-full bg-transparent text-xl font-bold tracking-tight outline-none placeholder:text-muted-foreground/40"
-          placeholder={t("Видеоны нэр", "Video title")}
-        />
+      <div className="vx-clip">
+        {/* ── HUD ── */}
+        <div className="vx-hud">
+          <div className="vx-hg">
+            <span className="vx-rec">
+              <span className="vx-dot" />
+              REC
+            </span>
+            <span className="vx-sep">/</span>
+            <span>Blueprint</span>
+          </div>
+          <div className="vx-hg">
+            <span className="vx-tag">
+              {String(N).padStart(2, "0")} scene{N > 1 ? "s" : ""}
+            </span>
+            <span className="vx-sep">·</span>
+            <span>{blueprint.durationSec}s</span>
+          </div>
+        </div>
 
-        {/* Compact metadata chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={cycleOrientation}
-            title={t("Дараагийн хэлбэр рүү шилжих", "Cycle orientation")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-accent/40 hover:bg-accent/5 hover:text-accent"
+        {/* ── Viewfinder ── */}
+        <div className="vx-vf">
+          <div className="vx-stage" />
+          <div className="vx-bokeh vx-b1" />
+          <div className="vx-bokeh vx-b2" />
+          <div className="vx-bokeh vx-b3" />
+          <div className="vx-bokeh vx-b4" />
+          <div className="vx-vig" />
+          <div className="vx-br vx-tl" style={brk.tl} />
+          <div className="vx-br vx-tr" style={brk.tr} />
+          <div className="vx-br vx-bl" style={brk.bl} />
+          <div className="vx-br vx-brr" style={brk.brr} />
+          <div className="vx-slate">
+            PROJECT · {String(N).padStart(2, "0")} SCENE{N > 1 ? "S" : ""}
+          </div>
+          <h3
+            className={cn("vx-title", !blueprint.title && "vx-title-placeholder")}
+            style={{ fontSize: blueprint.orientation === "16:9" ? 36 : 26 }}
           >
-            <span className="text-foreground/70">{t(currentOrientation.labelMn, currentOrientation.labelEn)}</span>
-            <span className="opacity-50">·</span>
-            <span className="font-mono opacity-60">{currentOrientation.value}</span>
+            {blueprint.title || t("Видеоны нэр…", "Video title…")}
+          </h3>
+          <button className="vx-ratio-btn" onClick={cycleOrientation}>
+            {blueprint.orientation} — {RATIO_LBL[blueprint.orientation] ?? "LANDSCAPE"}
           </button>
+          <div className="vx-tc">{blueprint.durationSec}s</div>
+        </div>
 
+        {/* ── Title + model toggle ── */}
+        <div className="vx-title-row">
+          <input
+            value={blueprint.title}
+            onChange={(e) => patch({ title: e.target.value })}
+            className="vx-title-input"
+            placeholder={t("Видеоны нэр…", "Video title…")}
+          />
           <button
-            onClick={cycleModel}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition",
-              blueprint.model === "veo3"
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-border/60 bg-muted/30 text-muted-foreground hover:border-accent/40 hover:bg-accent/5 hover:text-accent",
-            )}
+            onClick={() =>
+              patch({ model: blueprint.model === "standard" ? "veo3" : "standard" })
+            }
+            className={cn("vx-model-btn", blueprint.model === "veo3" && "vx-model-btn--active")}
           >
-            <Film className="h-3 w-3" />
-            {blueprint.model === "veo3" ? t("Кино чанар", "Cinematic") : t("Энгийн", "Standard")}
+            <Svg d={I.film} s={{ width: 12, height: 12 }} />
+            {blueprint.model === "veo3" ? t("Кино", "Cinema") : t("Энгийн", "Standard")}
           </button>
         </div>
 
-        {/* Scenes */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold">
-              {t("Хэсгүүд", "Scenes")}
-              <span className="ml-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">
-                {blueprint.scenes.length}
-              </span>
-            </span>
-            <span className="text-xs text-muted-foreground">~{blueprint.durationSec}s</span>
+        {/* ── Scene list ── */}
+        <div className="vx-body">
+          <div className="vx-eye">
+            <span />
+            {t("Хэсгүүд", "Scenes")}
           </div>
 
-          {blueprint.scenes.map((scene, idx) => (
-            <SceneCard
-              key={scene.id}
-              locale={locale}
-              index={idx}
-              scene={scene}
-              canDelete={blueprint.scenes.length > 1}
-              characters={allCharacters}
-              orientation={blueprint.orientation}
-              language={blueprint.language}
-              onChange={(p) => patchScene(scene.id, p)}
-              onRemove={() => removeScene(scene.id)}
-              onUpdateCharacter={updateCharacter}
-              onAddCharacter={() => addCharacterToScene(scene.id)}
-              onRemoveCharacter={removeCharacter}
-            />
-          ))}
+          {blueprint.scenes.map((scene, i) => {
+            const collapsed = collapsedScenes.has(scene.id)
+            const charIdx = scene.characterIdx ?? 0
+            const sceneChar = allCharacters[charIdx] ?? allCharacters[0]
 
-          <button
-            onClick={addScene}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border/50 py-3 text-xs font-medium text-muted-foreground transition hover:border-accent/50 hover:bg-accent/5 hover:text-accent"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("Хэсэг нэмэх", "Add scene")}
-          </button>
-        </div>
-      </div>
-
-      {/* Generate bar */}
-      <div className="border-t border-border/60 bg-card/80 p-4 backdrop-blur-sm">
-        {needsAvatar && (
-          <p className="mb-2.5 text-center text-xs text-destructive">
-            {t("Эхлээд аватар зураг оруулна уу.", "Add an avatar image first.")}
-          </p>
-        )}
-        {emptyScript && !needsAvatar && (
-          <p className="mb-2.5 text-center text-xs text-destructive">
-            {t("Танилцуулагч дүрийн яриаг бөглөнө үү.", "Fill in the script for presenter scenes.")}
-          </p>
-        )}
-        {emptyVisual && !needsAvatar && !emptyScript && (
-          <p className="mb-2.5 text-center text-xs text-destructive">
-            {t("Дүрслэх дүр бүрт зураглал эсвэл текст оруулна уу.", "Add a visual prompt or text for every b-roll scene.")}
-          </p>
-        )}
-        <button
-          onClick={onGenerate}
-          disabled={blocked}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 text-sm font-bold text-accent-foreground shadow-lg shadow-accent/25 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-        >
-          <Sparkles className="h-4 w-4" />
-          {t("Видео үүсгэх", "Generate video")}
-          <span className="ml-1 rounded-full bg-accent-foreground/15 px-2 py-0.5 text-xs font-semibold">
-            {credits} {t("кр", "cr")}
-          </span>
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function SceneCard({
-  locale,
-  index,
-  scene,
-  canDelete,
-  characters,
-  orientation,
-  language,
-  onChange,
-  onRemove,
-  onUpdateCharacter,
-  onAddCharacter,
-  onRemoveCharacter,
-}: {
-  locale: "mn" | "en"
-  index: number
-  scene: BlueprintScene
-  canDelete: boolean
-  characters: Character[]
-  orientation: Orientation
-  language: "mn" | "en"
-  onChange: (p: Partial<BlueprintScene>) => void
-  onRemove: () => void
-  onUpdateCharacter: (charIdx: number, p: Partial<Character>) => void
-  onAddCharacter: () => void
-  onRemoveCharacter: (charIdx: number) => void
-}) {
-  const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
-  const charIdx = scene.characterIdx ?? 0
-  const sceneChar = characters[charIdx] ?? characters[0]
-
-  const orientationLabel: Record<Orientation, string> = {
-    "9:16": t("Босоо", "Portrait"),
-    "16:9": t("Хэвтээ", "Landscape"),
-    "1:1": t("Дөрвөлжин", "Square"),
-  }
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-bold text-accent">
-            {index + 1}
-          </span>
-          {/* Type toggle */}
-          <button
-            onClick={() => onChange({ type: "a_roll" })}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-all",
-              scene.type === "a_roll"
-                ? "bg-accent/15 text-accent ring-1 ring-accent/30"
-                : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
-            )}
-          >
-            <User className="h-2.5 w-2.5" />
-            {t("Танилцуулагч", "Presenter")}
-          </button>
-          <button
-            onClick={() => onChange({ type: "b_roll" })}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-all",
-              scene.type === "b_roll"
-                ? "bg-accent/15 text-accent ring-1 ring-accent/30"
-                : "border border-border/50 text-muted-foreground hover:border-accent/30 hover:text-foreground",
-            )}
-          >
-            <Clapperboard className="h-2.5 w-2.5" />
-            {t("Дүрслэл", "Cinematic")}
-          </button>
-          {/* Character mini-selector (a_roll) — switch / add / remove characters */}
-          {scene.type === "a_roll" && (
-            <div className="flex items-center gap-0.5">
-              {characters.length > 1 &&
-                characters.map((char, idx) => (
-                  <span key={char.id} className="group/char relative">
+            return (
+              <div className="vx-scene" key={scene.id}>
+                {/* Scene header */}
+                <div
+                  className={cn("vx-shd", !collapsed && "open")}
+                  onClick={() => toggleCollapse(scene.id)}
+                >
+                  <span className="vx-snum">
+                    <span />
+                    Scene {String(i + 1).padStart(2, "0")}
+                    <span className="vx-type-badge">
+                      {scene.type === "a_roll"
+                        ? t("Танилцуулагч", "Presenter")
+                        : t("Дүрслэл", "Cinematic")}
+                    </span>
+                  </span>
+                  {collapsed && (
+                    <span className="vx-ssum">
+                      {scene.script
+                        ? scene.script.slice(0, 42) + (scene.script.length > 42 ? "…" : "")
+                        : t("Хоосон хэсэг", "Empty scene")}
+                    </span>
+                  )}
+                  <span className="vx-shp">
                     <button
-                      title={idx === 0 ? t("Үндсэн дүр", "Main actor") : `${t("Дүр", "Actor")} ${idx + 1}`}
-                      onClick={() => onChange({ characterIdx: idx })}
-                      className={cn(
-                        "flex h-5 w-5 items-center justify-center overflow-hidden rounded-full border transition",
-                        charIdx === idx
-                          ? "border-accent ring-1 ring-accent/40"
-                          : "border-border/50 opacity-50 hover:opacity-100",
-                      )}
+                      className="vx-ib"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleCollapse(scene.id)
+                      }}
                     >
-                      {char.avatar.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={char.avatar.imageUrl} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <User className="h-3 w-3 text-muted-foreground" />
-                      )}
+                      <Svg d={collapsed ? I.chev : I.chevUp} />
                     </button>
-                    {idx > 0 && (
-                      <span
-                        role="button"
-                        title={t("Дүр устгах", "Remove actor")}
+                    {N > 1 && (
+                      <button
+                        className="vx-ib del"
                         onClick={(e) => {
                           e.stopPropagation()
-                          onRemoveCharacter(idx)
+                          removeScene(scene.id)
                         }}
-                        className="absolute -right-1 -top-1 hidden h-3 w-3 items-center justify-center rounded-full bg-destructive text-destructive-foreground group-hover/char:flex"
                       >
-                        <X className="h-2 w-2" />
-                      </span>
+                        <Svg d={I.x} />
+                      </button>
                     )}
                   </span>
-                ))}
-              <button
-                title={t("Дүр нэмэх", "Add character")}
-                onClick={() => onAddCharacter()}
-                className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border/50 text-muted-foreground transition hover:border-accent/50 hover:text-accent"
-              >
-                <Plus className="h-3 w-3" />
-              </button>
-            </div>
-          )}
+                </div>
+
+                {/* Scene body */}
+                {!collapsed && (
+                  <div className="vx-sbd">
+                    {/* Type toggle */}
+                    <div className="vx-type-row">
+                      <button
+                        className={cn("vx-type-btn", scene.type === "a_roll" && "active")}
+                        onClick={() => patchScene(scene.id, { type: "a_roll" })}
+                      >
+                        <Svg d={I.mic} s={{ width: 11, height: 11 }} />
+                        {t("Танилцуулагч", "Presenter")}
+                      </button>
+                      <button
+                        className={cn("vx-type-btn", scene.type === "b_roll" && "active")}
+                        onClick={() => patchScene(scene.id, { type: "b_roll" })}
+                      >
+                        <Svg d={I.film} s={{ width: 11, height: 11 }} />
+                        {t("Дүрслэл", "Cinematic")}
+                      </button>
+                    </div>
+
+                    {/* Script | Style */}
+                    <div className="vx-prow">
+                      <div>
+                        <div className="vx-eye">
+                          <span />
+                          {scene.type === "a_roll" ? t("Яриа", "Script") : t("Хадмал", "Caption")}
+                        </div>
+                        <textarea
+                          className="vx-ta"
+                          value={scene.script}
+                          rows={4}
+                          placeholder={
+                            scene.type === "a_roll"
+                              ? t("Юу хэлэх вэ…", "What to say…")
+                              : t("Дуут тайлбар…", "Voiceover…")
+                          }
+                          onChange={(e) => patchScene(scene.id, { script: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <div className="vx-eye">
+                          <span />
+                          {t("Дүрслэл", "Style")}
+                        </div>
+                        <textarea
+                          className="vx-ta"
+                          value={scene.visualPrompt}
+                          rows={4}
+                          placeholder={t(
+                            "Визуал дүрслэл (англиар)…",
+                            "Visual description (English)…",
+                          )}
+                          onChange={(e) => patchScene(scene.id, { visualPrompt: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Cast — presenter only */}
+                    {scene.type === "a_roll" && (
+                      <div className="vx-cast">
+                        <div className="vx-eye">
+                          <span />
+                          {t("Дүр", "Cast")}
+                        </div>
+                        <div className="vx-cast-inner">
+                          <AvatarPicker
+                            locale={locale}
+                            avatar={sceneChar.avatar}
+                            orientation={blueprint.orientation}
+                            required
+                            onChange={(avatar) => updateCharacter(charIdx, { avatar })}
+                          />
+                          <VoicePicker
+                            value={{
+                              voiceId: sceneChar.voice.voiceId,
+                              lang: sceneChar.voice.lang,
+                            }}
+                            onChange={(sel) =>
+                              updateCharacter(charIdx, {
+                                voice: { ...sceneChar.voice, ...sel },
+                              })
+                            }
+                            locale={locale}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Specs */}
+                    <div className="vx-spec">
+                      <span className="vx-step">
+                        <button
+                          onClick={() =>
+                            patchScene(scene.id, {
+                              durationSec: Math.max(3, scene.durationSec - 1),
+                            })
+                          }
+                          disabled={scene.durationSec <= 3}
+                        >
+                          −
+                        </button>
+                        <b>{scene.durationSec}s</b>
+                        <button
+                          onClick={() =>
+                            patchScene(scene.id, {
+                              durationSec: Math.min(15, scene.durationSec + 1),
+                            })
+                          }
+                          disabled={scene.durationSec >= 15}
+                        >
+                          +
+                        </button>
+                      </span>
+                      <span className="vx-chip">
+                        <Svg d={I.globe} s={{ width: 11, height: 11 }} />
+                        {blueprint.language === "mn" ? "mn-MN" : "en-US"}
+                      </span>
+                      <span className="vx-chip vx-credit">
+                        <Svg d={I.coin} s={{ width: 11, height: 11 }} />
+                        15–30 {t("кр", "cr")}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          <button className="vx-addscene" onClick={addScene}>
+            <Svg d={I.plus} />
+            {t("Scene нэмэх", "Add scene")}
+          </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Duration stepper */}
-          <div className="flex items-center overflow-hidden rounded-lg border border-border/50">
-            <button
-              onClick={() => onChange({ durationSec: Math.max(3, scene.durationSec - 1) })}
-              className="flex h-5 w-5 items-center justify-center bg-muted/30 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              −
-            </button>
-            <span className="w-8 text-center text-[11px] tabular-nums">{scene.durationSec}s</span>
-            <button
-              onClick={() => onChange({ durationSec: Math.min(15, scene.durationSec + 1) })}
-              className="flex h-5 w-5 items-center justify-center bg-muted/30 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              +
-            </button>
+        {/* Validation message */}
+        {(needsAvatar || emptyScript || emptyVisual) && (
+          <div className="vx-warn">
+            {needsAvatar
+              ? t("Аватар зураг оруулна уу", "Add an avatar image first")
+              : emptyScript
+                ? t("Яриа хоосон байна", "Script is empty")
+                : t("Дүрслэл хоосон байна", "Visual prompt is empty")}
           </div>
-          {canDelete && (
-            <button
-              onClick={onRemove}
-              className="flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      </div>
+        )}
 
-      {/* Script | Style — HeyGen-style 2-column */}
-      <div className="grid grid-cols-2 divide-x divide-border/40">
-        <div className="p-3 space-y-1.5">
-          <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-            <Mic className="h-2.5 w-2.5" />
-            {scene.type === "a_roll" ? t("Яриа", "Script") : t("Хадмал", "Voiceover")}
-          </span>
-          <textarea
-            value={scene.script}
-            onChange={(e) => onChange({ script: e.target.value })}
-            rows={4}
-            placeholder={
-              scene.type === "a_roll"
-                ? t("Юу хэлэх вэ…", "What is said…")
-                : t("Дуут тайлбар (заавал биш)…", "Voiceover (optional)…")
-            }
-            className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/30"
-          />
+        {/* Generate */}
+        <div className="vx-actions">
+          <button className="vx-btn vx-gen" onClick={onGenerate} disabled={blocked}>
+            {generating ? (
+              <>
+                <span className="vx-spin" />
+                {t("Үүсгэж байна…", "Generating…")}
+              </>
+            ) : (
+              <>
+                {t("Generate", "Generate")} · {N} scene · {credits}{" "}
+                {t("кр", "cr")}
+                <Svg d={I.arrow} w={2.4} />
+              </>
+            )}
+          </button>
         </div>
-        <div className="p-3 space-y-1.5">
-          <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-            <Wand2 className="h-2.5 w-2.5" />
-            {t("Дүрслэл", "Style")}
-          </span>
-          <textarea
-            value={scene.visualPrompt}
-            onChange={(e) => onChange({ visualPrompt: e.target.value })}
-            rows={4}
-            placeholder={t("Визуал дүрслэл (англиар)…", "Visual description (in English)…")}
-            className="w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/30"
-          />
-        </div>
-      </div>
-
-      {/* Avatar | Voice — only presenter scenes (HeyGen-style, inside the card) */}
-      {scene.type === "a_roll" && (
-        <div className="grid grid-cols-2 divide-x divide-border/40 border-t border-border/40">
-          <div className="min-w-0 p-3 space-y-1.5">
-            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              <User className="h-2.5 w-2.5" />
-              {t("Дүр", "Avatar")}
-            </span>
-            <AvatarPicker
-              locale={locale}
-              avatar={sceneChar.avatar}
-              orientation={orientation}
-              required
-              onChange={(avatar) => onUpdateCharacter(charIdx, { avatar })}
-            />
-          </div>
-          <div className="min-w-0 p-3 space-y-1.5">
-            <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              <Mic className="h-2.5 w-2.5" />
-              {t("Хоолой", "Voice")}
-            </span>
-            <VoicePicker
-              value={{ voiceId: sceneChar.voice.voiceId, lang: sceneChar.voice.lang }}
-              onChange={(sel) => onUpdateCharacter(charIdx, { voice: { ...sceneChar.voice, ...sel } })}
-              locale={locale}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Details chips — like HeyGen's footer */}
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 bg-muted/10 px-3 py-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-          ⏱ {scene.durationSec}s
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-          📐 {orientationLabel[orientation]}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-          🌐 {language === "mn" ? "mn-MN" : "en-US"}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-          {scene.type === "a_roll" ? `🎙 ${t("Танилцуулагч", "Presenter")}` : `🎬 ${t("Дүрслэл", "Cinematic")}`}
-        </span>
       </div>
     </div>
   )

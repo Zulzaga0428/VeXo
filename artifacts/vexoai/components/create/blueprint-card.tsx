@@ -175,6 +175,7 @@ const I = {
   check: <path d="M5 13l4 4L19 7" />, globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" /></>,
   cc: <><rect x="2" y="5" width="20" height="14" rx="3" /><path d="M8 11h2M14 11h2M7 14h4M13 14h4" /></>,
   coin: <><circle cx="12" cy="12" r="8" /><path d="M12 8v8M9 10h4.5a1.5 1.5 0 0 1 0 3H9h5" /></>,
+  film: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 15h18M8 4v16M16 4v16" /></>,
   play: <path d="M8 5v14l11-7z" />, pause: <><rect x="7" y="5" width="3.5" height="14" rx="1" /><rect x="14" y="5" width="3.5" height="14" rx="1" /></>,
   dl: <path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16" />,
 };
@@ -244,19 +245,31 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
   }, []);
 
   // -- Derive the card view-model from the real VideoBlueprint --
-  const voiceIdx = Math.max(0, voices.findIndex((v) => v.voiceId === bp.voice?.voiceId));
-  const avatarVM = bp.avatar?.imageUrl
-    ? { type: bp.avatar.type, label: bp.avatar.label || tr("Сонгосон зураг", "Selected image") }
-    : null;
-  const scenes = bp.scenes.map((s) => ({
-    script: s.script,
-    style: s.visualPrompt,
-    avatar: avatarVM,
-    voice: voiceIdx,
-    duration: s.durationSec,
-    ratio: bp.orientation,
-    collapsed: collapsed.has(s.id),
-  }));
+  // Each scene resolves its own cast: characterIdx 0/undefined = primary
+  // (bp.avatar / bp.voice); 1+ = bp.characters[idx-1]. characters[] is
+  // append-only so stored indices never go stale on add/delete.
+  const sceneChar = (s) => {
+    const idx = s?.characterIdx ?? 0;
+    if (idx > 0 && bp.characters && bp.characters[idx - 1]) return bp.characters[idx - 1];
+    return { avatar: bp.avatar, voice: bp.voice };
+  };
+  const scenes = bp.scenes.map((s) => {
+    const ch = sceneChar(s);
+    const avatarVM = ch.avatar?.imageUrl
+      ? { type: ch.avatar.type, label: ch.avatar.label || tr("Сонгосон зураг", "Selected image") }
+      : null;
+    const vIdx = Math.max(0, voices.findIndex((v) => v.voiceId === ch.voice?.voiceId));
+    return {
+      type: s.type || "a_roll",
+      script: s.script,
+      style: s.visualPrompt,
+      avatar: avatarVM,
+      voice: vIdx,
+      duration: s.durationSec,
+      ratio: bp.orientation,
+      collapsed: collapsed.has(s.id),
+    };
+  });
 
   const N = scenes.length;
   const totalDur = scenes.reduce((a, s) => a + s.duration, 0);
@@ -286,6 +299,42 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
   const patchSceneAt = (i, p) =>
     commit({ ...bp, scenes: bp.scenes.map((s, idx) => (idx === i ? { ...s, ...p } : s)) });
 
+  // Write a scene's cast — position-independent so scene add/delete/reorder can
+  // never break it. A scene with a valid own character (characterIdx -> existing
+  // entry) is edited in place. A scene on the primary cast edits bp.avatar/voice
+  // in place only when it is the SOLE user of primary; if other scenes also share
+  // primary it forks its own character (cloned from primary) so they stay put.
+  // A stale/invalid characterIdx is treated as primary and recovers cleanly.
+  // characters[] is append-only — never spliced — so stored indices never rot.
+  const newCharId = () => `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const onPrimary = (s) => {
+    const idx = s?.characterIdx ?? 0;
+    return !(idx > 0 && bp.characters && bp.characters[idx - 1]);
+  };
+  const writeCast = (i, field, value) => {
+    const s = bp.scenes[i];
+    if (!onPrimary(s)) {
+      const idx = s.characterIdx;
+      const chars = bp.characters.map((c, k) => (k === idx - 1 ? { ...c, [field]: value } : c));
+      return onChange?.({ ...bp, characters: chars });
+    }
+    const sharesPrimary = bp.scenes.some((o, k) => k !== i && onPrimary(o));
+    if (!sharesPrimary) {
+      return onChange?.({ ...bp, [field]: value });
+    }
+    const cur = sceneChar(s); // primary snapshot
+    const chars = bp.characters ? bp.characters.map((c) => ({ ...c })) : [];
+    chars.push({ id: newCharId(), avatar: { ...cur.avatar }, voice: { ...cur.voice }, [field]: value });
+    const idx = chars.length;
+    onChange?.({
+      ...bp,
+      characters: chars,
+      scenes: bp.scenes.map((sc, k) => (k === i ? { ...sc, characterIdx: idx } : sc)),
+    });
+  };
+  const setSceneAvatar = (i, ref) => writeCast(i, "avatar", ref || { type: "none" });
+  const setSceneVoice = (i, voiceRef) => writeCast(i, "voice", voiceRef);
+
   // Generate -> run the real server-charged pipeline (page swaps to the timeline).
   const start = () => { onGenerate?.(); };
   const reset = () => { setPct(0); setPlayPct(0); setPlaying(false); setMode("idle"); };
@@ -305,13 +354,11 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
     if (k === "style") return patchSceneAt(i, { visualPrompt: v });
     if (k === "duration") return patchSceneAt(i, { durationSec: v });
     if (k === "ratio") return commit({ ...bp, orientation: v });
-    if (k === "avatar") {
-      if (!v) return onChange?.({ ...bp, avatar: { type: "none" } });
-      return onChange?.({ ...bp, avatar: v });
-    }
+    if (k === "type") return patchSceneAt(i, { type: v });
+    if (k === "avatar") return setSceneAvatar(i, v || null);
     if (k === "voice") {
       const sel = voices[v];
-      if (sel?.voiceId) onChange?.({ ...bp, voice: { voiceId: sel.voiceId, lang: sel.lang, name: sel.name } });
+      if (sel?.voiceId) setSceneVoice(i, { voiceId: sel.voiceId, lang: sel.lang, name: sel.name });
       return;
     }
   };
@@ -336,7 +383,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
     setAvatarBusy(true);
     const res = await uploadImage(file);
     setAvatarBusy(false);
-    if (res?.ok) onChange?.({ ...bp, avatar: { type: "upload", imageUrl: res.data.url, label: file.name } });
+    if (res?.ok) setSceneAvatar(uploadIdx.current, { type: "upload", imageUrl: res.data.url, label: file.name });
   };
   const aiAvatar = async (i) => {
     setMenu(null);
@@ -346,7 +393,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
     const res = await generateImage({ prompt, aspectRatio: bp.orientation, mode: "photo" });
     setAvatarBusy(false);
     if (res?.ok && res.data.images?.[0]) {
-      onChange?.({ ...bp, avatar: { type: "generated", imageUrl: res.data.images[0].url, label: prompt.slice(0, 40) } });
+      setSceneAvatar(i, { type: "generated", imageUrl: res.data.images[0].url, label: prompt.slice(0, 40) });
     }
   };
 
@@ -411,17 +458,24 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                           <div className="vx-cast">
                             <div className="vx-eye">Cast</div>
                             <div className="vx-castgrid">
-                              <button className={`vx-slot${sc.avatar ? " sel" : ""}`} onClick={() => setMenu(menu && menu.i === i && menu.field === "avatar" ? null : { i, field: "avatar" })}>
-                                <div className={`vx-av${sc.avatar ? " on" : ""}`}><Svg d={sc.avatar ? I.check : I.user} s={{ width: 18, height: 18 }} /></div>
-                                <div className="vx-meta"><span className="vx-k">Avatar</span><span className={`vx-v${sc.avatar ? " on" : ""}`}>{sc.avatar ? sc.avatar.label : "Сонгох…"}</span></div>
-                                <span className="vx-chev"><Svg d={I.chev} s={{ width: 15, height: 15 }} /></span>
-                                {menu && menu.i === i && menu.field === "avatar" && (
-                                  <div className="vx-pop" onClick={(e) => e.stopPropagation()}>
-                                    <div className="vx-pi" onClick={() => openUpload(i)}><Svg d={I.upload} /><span className="vx-nm">Зураг оруулах</span><span className="vx-ptag">upload</span></div>
-                                    <div className="vx-pi" onClick={() => aiAvatar(i)}><Svg d={I.sparkle} /><span className="vx-nm">AI-аар үүсгэх</span><span className="vx-ptag">AI</span></div>
-                                  </div>
-                                )}
-                              </button>
+                              {sc.type === "b_roll" ? (
+                                <div className="vx-slot" style={{ cursor: "default", opacity: 0.7 }}>
+                                  <div className="vx-av on"><Svg d={I.film} s={{ width: 18, height: 18 }} /></div>
+                                  <div className="vx-meta"><span className="vx-k">Footage</span><span className="vx-v on">{tr("Style-аас видео", "From style")}</span></div>
+                                </div>
+                              ) : (
+                                <button className={`vx-slot${sc.avatar ? " sel" : ""}`} onClick={() => setMenu(menu && menu.i === i && menu.field === "avatar" ? null : { i, field: "avatar" })}>
+                                  <div className={`vx-av${sc.avatar ? " on" : ""}`}><Svg d={sc.avatar ? I.check : I.user} s={{ width: 18, height: 18 }} /></div>
+                                  <div className="vx-meta"><span className="vx-k">Avatar</span><span className={`vx-v${sc.avatar ? " on" : ""}`}>{sc.avatar ? sc.avatar.label : "Сонгох…"}</span></div>
+                                  <span className="vx-chev"><Svg d={I.chev} s={{ width: 15, height: 15 }} /></span>
+                                  {menu && menu.i === i && menu.field === "avatar" && (
+                                    <div className="vx-pop" onClick={(e) => e.stopPropagation()}>
+                                      <div className="vx-pi" onClick={() => openUpload(i)}><Svg d={I.upload} /><span className="vx-nm">Зураг оруулах</span><span className="vx-ptag">upload</span></div>
+                                      <div className="vx-pi" onClick={() => aiAvatar(i)}><Svg d={I.sparkle} /><span className="vx-nm">AI-аар үүсгэх</span><span className="vx-ptag">AI</span></div>
+                                    </div>
+                                  )}
+                                </button>
+                              )}
 
                               <button className="vx-slot sel" onClick={() => setMenu(menu && menu.i === i && menu.field === "voice" ? null : { i, field: "voice" })}>
                                 <div className="vx-av on"><Svg d={I.wave} s={{ width: 18, height: 18 }} /></div>
@@ -445,6 +499,9 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                               <button onClick={() => setField(i, "duration", Math.max(2, sc.duration - 1))} disabled={sc.duration <= 2}>−</button>
                               <b>{sc.duration}s</b>
                               <button onClick={() => setField(i, "duration", Math.min(60, sc.duration + 1))} disabled={sc.duration >= 60}>+</button>
+                            </span>
+                            <span className="vx-chip click" onClick={() => setField(i, "type", sc.type === "a_roll" ? "b_roll" : "a_roll")}>
+                              <Svg d={sc.type === "b_roll" ? I.film : I.user} s={{ width: 12, height: 12 }} />{sc.type === "b_roll" ? tr("Дүрс", "Footage") : tr("Ярьдаг", "Talking")}
                             </span>
                             <span className="vx-chip click" onClick={() => setField(i, "ratio", RATIOS[(RATIOS.indexOf(sc.ratio) + 1) % RATIOS.length])}>
                               <RatioGlyph ratio={sc.ratio} />{sc.ratio}

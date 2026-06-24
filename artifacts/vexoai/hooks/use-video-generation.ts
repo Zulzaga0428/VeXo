@@ -51,9 +51,11 @@ function runKeyOf(bp: VideoBlueprint): string {
     orientation: bp.orientation,
     avatar: bp.avatar.imageUrl ?? null,
     voice: bp.voice,
+    characters: bp.characters ?? null,
     scenes: bp.scenes.map((s) => ({
       id: s.id,
       type: s.type,
+      character: s.characterIdx ?? 0,
       script: s.script.trim(),
       visual: s.visualPrompt.trim(),
       dur: s.durationSec,
@@ -282,7 +284,8 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
             //    in flight (audio is kept for stitch even after the job submits).
             if (sceneHasNarration(scene) && !st.ttsAudioUrl && !st.job) {
               patch(scene.id, { status: "tts", progress: 8 })
-              const tts = await generateTts(scene.script, bp.voice.voiceId, bp.voice.lang)
+              const bChar = getSceneCharacter(scene, bp)
+              const tts = await generateTts(scene.script, bChar.voice.voiceId, bChar.voice.lang)
               if (!tts.ok) throw new Error(tts.error)
               st = { ...st, ttsAudioUrl: tts.data.audioUrl }
               setState(st)

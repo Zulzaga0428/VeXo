@@ -2,3 +2,4 @@
 - [Credits atomicity invariant](credits-invariant.md) — credit mutations must be atomic+idempotent DB RPCs (never client read-modify-write); poll endpoints/sweeps refund/settle by requestId-keyed RPC (exactly-once cross-instance); lipsync map is cache-only.
 - [Reconcile sweep trigger](reconcile-sweep-trigger.md) — reconcile sweep runs on a schedule via in-process timer in Next `instrumentation.ts` (prod default) plus the `/api/cron/reconcile-charges` endpoint; safe multi-instance via idempotent RPCs.
 - [Supabase + Next.js in Replit iframe preview](supabase-replit-iframe-preview.md) — login (SameSite=None cookies) and HMR (allowedDevOrigins) both break in the cross-site preview iframe; fix dev-only.
+- [VexoAI per-scene cast](vexoai-per-scene-cast.md) — characterIdx contract; append-only characters[], position-independent fork, sole-primary-user rule; runKeyOf must include characters.

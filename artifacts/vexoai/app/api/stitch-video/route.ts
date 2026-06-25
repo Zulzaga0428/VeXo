@@ -131,9 +131,16 @@ export async function POST(req: NextRequest) {
       const mergedVideoUrl = (mergeResult.data as { video?: { url: string } })?.video?.url
 
       if (!mergedVideoUrl) {
-        // Merge failed but scenes were processed — return the first processed clip
-        // rather than charging for nothing.
-        return NextResponse.json({ videoUrl: processedVideos[0] })
+        // Merge failed after scenes were processed — refund the full cost so the
+        // user is not charged for a broken output, then surface a clear error.
+        await refundCredits(charge.userId, cost)
+        return NextResponse.json(
+          {
+            error:
+              "Видео нэгтгэхэд алдаа гарлаа. Кредит бүрэн буцаагдлаа — дахин оролдоно уу.",
+          },
+          { status: 500 },
+        )
       }
 
       return NextResponse.json({ videoUrl: mergedVideoUrl })
@@ -142,7 +149,7 @@ export async function POST(req: NextRequest) {
       throw e
     }
   } catch (error) {
-    console.error("Stitch error:", error)
+    void error
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Stitch failed" },
       { status: 500 },

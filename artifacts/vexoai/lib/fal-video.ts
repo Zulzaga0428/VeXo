@@ -200,14 +200,41 @@ export async function createImageToVideo(params: {
 // Replaces the broken image-to-video → lipsync chain entirely.
 export const KLING_AVATAR_ENDPOINT = "fal-ai/kling-video/ai-avatar/v2/standard"
 
+/**
+ * Re-upload a URL to FAL storage and return a fresh URL.
+ *
+ * Kling model fetches the image from a separate server pool. If the stored URL
+ * is a previously-uploaded FAL CDN link it may be inaccessible from that pool,
+ * or the signed URL may have expired — causing `image_load_error` (422).
+ * Re-uploading guarantees a current, publicly-accessible FAL storage URL.
+ */
+async function reuploadToFal(url: string, label: string): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`[avatar] Cannot fetch ${label} for re-upload (${res.status}): ${url}`)
+  }
+  const blob = await res.blob()
+  const freshUrl = await fal.storage.upload(blob)
+  logger.info(`[avatar] Re-uploaded ${label}`, { original: url, fresh: freshUrl })
+  return freshUrl
+}
+
 export async function createAvatarVideo(params: {
   imageUrl: string
   audioUrl: string
   prompt?: string
 }): Promise<{ requestId: string }> {
+  // Always re-upload image (and audio) to obtain a fresh FAL storage URL.
+  // Previously-stored fal.media URLs can become inaccessible from Kling's
+  // fetch pool, producing image_load_error (422) on every retry.
+  const [freshImageUrl, freshAudioUrl] = await Promise.all([
+    reuploadToFal(params.imageUrl, "image_url"),
+    reuploadToFal(params.audioUrl, "audio_url"),
+  ])
+
   const input = {
-    image_url: params.imageUrl,
-    audio_url: params.audioUrl,
+    image_url: freshImageUrl,
+    audio_url: freshAudioUrl,
     prompt: params.prompt || "Natural talking head, clear lip movement, looking at camera.",
     cfg_scale: 0.5,
     generate_audio: false,
@@ -216,7 +243,11 @@ export async function createAvatarVideo(params: {
     const { request_id } = await fal.queue.submit(KLING_AVATAR_ENDPOINT, { input })
     return { requestId: request_id }
   } catch (error) {
-    logger.error("[avatar] FAL submit error", { err: toErrStr(error) })
+    logger.error("[avatar] FAL submit error", {
+      httpStatus: falHttpStatus(error),
+      detail: falErrorDetail(error),
+      err: toErrStr(error),
+    })
     throw error
   }
 }

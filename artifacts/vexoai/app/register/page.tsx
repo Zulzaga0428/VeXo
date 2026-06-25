@@ -108,6 +108,7 @@ export default function RegisterPage() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="hello@example.com"
@@ -123,6 +124,7 @@ export default function RegisterPage() {
               <input
                 id="password"
                 type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Хамгийн багадаа 6 тэмдэгт"

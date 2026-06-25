@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { useBlueprintChat } from "@/hooks/use-blueprint-chat"
 import { useVideoGeneration } from "@/hooks/use-video-generation"
 import type { VideoBlueprint } from "@/lib/blueprint"
+import { requestNotifyPermission } from "@/lib/notify"
 import { ChatPanel } from "@/components/create/chat-panel"
 import { ArtifactsPanel, type CreateView } from "@/components/create/artifacts-panel"
 import BlueprintCard from "@/components/create/blueprint-card"
@@ -80,6 +81,9 @@ export function CreatePageClient() {
   }, [gen.phase])
 
   const handleGenerate = useCallback(() => {
+    // Ask for notification permission up-front so the browser dialog appears
+    // at a natural moment (user intent) rather than mid-generation.
+    requestNotifyPermission()
     // Prefer the live plan; fall back to the recovered snapshot when resuming.
     const bp = blueprint ?? gen.activeBlueprint
     if (bp) gen.run(bp)

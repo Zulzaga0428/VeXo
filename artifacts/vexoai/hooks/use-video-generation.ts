@@ -14,6 +14,7 @@ import {
   stitchVideo,
   videoStatus,
 } from "@/lib/create-api-client"
+import { flashTabTitle, sendVideoReadyNotification } from "@/lib/notify"
 import { sceneHasNarration, willStitch } from "@/lib/blueprint-costs"
 import type { AvatarRef, BlueprintScene, SceneStatus, VideoBlueprint, VoiceRef } from "@/lib/blueprint"
 import type { PersistedRun, PersistedScene, SceneJob } from "@/lib/create-run"
@@ -394,6 +395,11 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
 
       setFinalUrl(final)
       setPhase("done")
+
+      // Notify the user — useful when they have switched to another tab while
+      // waiting for the (often 1–3 min) generation to finish.
+      sendVideoReadyNotification(bp.title)
+      flashTabTitle(t("🎬 Видео бэлэн боллоо!", "🎬 Video is ready!"))
     },
     [patch, persist, t],
   )

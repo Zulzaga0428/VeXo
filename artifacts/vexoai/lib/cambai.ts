@@ -1,4 +1,6 @@
 import { fal } from "@fal-ai/client"
+import { estimateSpeechDuration } from "@/lib/blueprint"
+import { logger } from "@/lib/logger"
 
 /**
  * camb.ai integration — high-quality Mongolian (and multilingual) TTS plus
@@ -39,6 +41,23 @@ function nextKey(): string {
 
 export function isCambConfigured(): boolean {
   return !!process.env.CAMB_API_KEY
+}
+
+// mars-8.1 can "loop" — repeating the final phrase several times — on short or
+// loosely-punctuated Mongolian text, because it lacks a clean end-of-utterance
+// signal. Normalize whitespace, collapse stray/repeated punctuation, and
+// guarantee a single terminal period so the model knows exactly where to stop.
+function sanitizeTtsText(text: string): string {
+  let t = text
+    .replace(/[\u200b-\u200d\uFEFF]/g, "") // zero-width chars
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s*\n\s*/g, ". ") // line breaks become sentence breaks
+    .replace(/[.\u2026]{2,}/g, ".") // "…" / ".." / "..." -> single "."
+    .replace(/([.!?])\s*(?:\1\s*)+/g, "$1 ") // collapse repeated terminals
+    .replace(/\s+/g, " ")
+    .trim()
+  if (t && !/[.!?]$/.test(t)) t += "." // ensure a terminal period
+  return t
 }
 
 function headers(apiKey: string, json = false): Record<string, string> {
@@ -119,8 +138,55 @@ export async function cambTextToSpeech(
   }
 
   const apiKey = nextKey()
+  const cleanText = sanitizeTtsText(text)
 
-  // Single request: tts-stream returns the final rendered audio directly.
+  // Expected speech length (s) from the text. When the model "loops" it repeats
+  // the final phrase, so the audio comes out far longer than the text warrants —
+  // we use this as the anti-loop tripwire below.
+  const expectedSec = estimateSpeechDuration(cleanText)
+
+  let best = await requestCambAudio(apiKey, cleanText, voiceId, opts)
+  let bestDur = wavDurationSec(best.bytes)
+
+  // Anti-loop guard: if the rendered audio is dramatically longer than the text
+  // should take (>1.8x), the model almost certainly looped the ending. Retry
+  // once and keep whichever attempt is closest to the expected duration.
+  if (expectedSec > 0 && bestDur !== undefined && bestDur > expectedSec * 1.8) {
+    logger.warn("[camb] audio longer than expected — possible loop, retrying once", {
+      expectedSec: Math.round(expectedSec * 10) / 10,
+      gotSec: Math.round(bestDur * 10) / 10,
+      voiceId,
+    })
+    try {
+      const retry = await requestCambAudio(apiKey, cleanText, voiceId, opts)
+      const retryDur = wavDurationSec(retry.bytes)
+      if (
+        retryDur !== undefined &&
+        Math.abs(retryDur - expectedSec) < Math.abs(bestDur - expectedSec)
+      ) {
+        best = retry
+        bestDur = retryDur
+      }
+    } catch (e) {
+      logger.warn("[camb] anti-loop retry failed, keeping first attempt", { err: String(e) })
+    }
+  }
+
+  // Upload to fal storage for a stable public URL.
+  const file = new File([best.bytes], `camb-${voiceId}-${Date.now()}.${best.ext}`, {
+    type: best.contentType,
+  })
+  const audioUrl = await fal.storage.upload(file)
+  return { audioUrl }
+}
+
+// One tts-stream request → raw audio bytes + content type.
+async function requestCambAudio(
+  apiKey: string,
+  text: string,
+  voiceId: number,
+  opts: { language?: string; model?: CambSpeechModel },
+): Promise<{ bytes: ArrayBuffer; contentType: string; ext: string }> {
   const res = await fetch(`${BASE}/tts-stream`, {
     method: "POST",
     headers: headers(apiKey, true),
@@ -142,9 +208,21 @@ export async function cambTextToSpeech(
   if (bytes.byteLength < 1000) {
     throw new Error("camb.ai tts-stream: empty audio returned")
   }
+  return { bytes, contentType, ext }
+}
 
-  // Upload to fal storage for a stable public URL.
-  const file = new File([bytes], `camb-${voiceId}-${Date.now()}.${ext}`, { type: contentType })
-  const audioUrl = await fal.storage.upload(file)
-  return { audioUrl }
+// Duration (seconds) from a standard WAV header (byteRate at offset 28). Returns
+// undefined for non-WAV payloads so callers can skip the anti-loop check.
+function wavDurationSec(buf: ArrayBuffer): number | undefined {
+  try {
+    if (buf.byteLength < 44) return undefined
+    const view = new DataView(buf)
+    // "RIFF"/"WAVE" magic — bail if this isn't a PCM WAV.
+    if (view.getUint32(0, false) !== 0x52494646) return undefined
+    const byteRate = view.getUint32(28, true)
+    if (!byteRate) return undefined
+    return (buf.byteLength - 44) / byteRate
+  } catch {
+    return undefined
+  }
 }

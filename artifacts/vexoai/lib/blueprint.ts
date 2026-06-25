@@ -111,6 +111,19 @@ function clampDuration(d: unknown, fallback = 8): number {
   return Math.min(Math.max(Math.round(n), 3), 15)
 }
 
+// Mongolian narration averages ~2.5 spoken words/second. The REAL clip length is
+// set by the narration audio (a_roll: Kling avatar tracks the voice; b_roll: the
+// footage is trimmed to the voice during stitch), NOT by the agent's durationSec.
+// So for any narrated scene we derive durationSec from the script — this keeps
+// the number the user sees on the blueprint honest vs. the rendered output.
+const SPEECH_WORDS_PER_SEC = 2.5
+
+export function estimateSpeechDuration(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length
+  if (words === 0) return 0
+  return words / SPEECH_WORDS_PER_SEC
+}
+
 // Raw scene shape that the agent (Claude) returns — loose, normalized below.
 export interface RawScene {
   type?: string
@@ -164,11 +177,19 @@ export function normalizeBlueprint(
         : typeof s.summary === "string"
           ? s.summary
           : ""
+    const trimmedScript = script.trim()
+    // Narrated scenes: length is dictated by the voice, so derive it from the
+    // script (rounded up). Silent b_roll: keep the agent's requested duration.
+    const speechDur = trimmedScript ? Math.ceil(estimateSpeechDuration(trimmedScript)) : 0
+    // veo3 only renders up to 8s; standard up to 15s. Clamp here so the number
+    // shown on the blueprint never promises more than the model can produce.
+    const maxDur = model === "veo3" ? 8 : 15
+    const rawDur = speechDur > 0 ? clampDuration(speechDur) : clampDuration(s.durationSec ?? s.duration)
     return {
       id: newSceneId(),
       type,
-      durationSec: clampDuration(s.durationSec ?? s.duration),
-      script: script.trim(),
+      durationSec: Math.min(rawDur, maxDur),
+      script: trimmedScript,
       visualPrompt: visualPrompt.trim(),
       description: typeof s.description === "string" ? s.description.trim() : undefined,
       status: "idle",

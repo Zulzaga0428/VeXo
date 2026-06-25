@@ -4,3 +4,4 @@
 - [Supabase + Next.js in Replit iframe preview](supabase-replit-iframe-preview.md) — login (SameSite=None cookies) and HMR (allowedDevOrigins) both break in the cross-site preview iframe; fix dev-only.
 - [VexoAI per-scene cast](vexoai-per-scene-cast.md) — characterIdx contract; append-only characters[], position-independent fork, sole-primary-user rule; runKeyOf must include characters.
 - [VexoAI duration cap](vexoai-duration-cap.md) — scene durationSec max is quality-dependent (Standard 15s / Premium veo3 8s); enforce at every write boundary AND normalize on load.
+- [VexoAI render length & Camb TTS loop](vexoai-render-length-and-tts.md) — rendered clip length is narration-driven (not durationSec); derive durationSec from script. Camb mars-8.1 loops final phrase → sanitize text + WAV-duration anti-loop retry.

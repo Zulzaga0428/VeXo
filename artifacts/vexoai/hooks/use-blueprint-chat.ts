@@ -1,15 +1,13 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
-import { clarifyIdea, streamBlueprint, type ClarifyQuestion } from "@/lib/create-api-client"
+import { useCallback, useState } from "react"
+import { streamBlueprint } from "@/lib/create-api-client"
 import { normalizeBlueprint, type VideoBlueprint } from "@/lib/blueprint"
 
 export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   text: string
-  // When present the message offers tappable clarification chips.
-  clarify?: ClarifyQuestion[]
   // Marks the assistant message that announced a (re)built plan.
   isPlan?: boolean
 }
@@ -20,7 +18,7 @@ function mid(): string {
 
 /**
  * Drives the chat side of the Create flow:
- *   first idea -> optional clarify -> blueprint
+ *   idea -> agent thinks -> blueprint (no clarification chips)
  *   later messages -> revise the existing blueprint
  * The blueprint itself is owned by the page; this hook reads it via getBlueprint
  * and hands new versions back through onBlueprint.
@@ -35,7 +33,6 @@ export function useBlueprintChat(opts: {
   const [thinking, setThinking] = useState(false)
   const [statusSteps, setStatusSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const pendingIdeaRef = useRef<string | null>(null)
 
   const push = useCallback((m: Omit<ChatMessage, "id">) => {
     setMessages((prev) => [...prev, { ...m, id: mid() }])
@@ -87,59 +84,19 @@ export function useBlueprintChat(opts: {
       const trimmed = text.trim()
       if (!trimmed || thinking) return
       push({ role: "user", text: trimmed })
-
-      // Folding in an answer to a previously-asked clarification question.
-      if (pendingIdeaRef.current) {
-        const combined = `${pendingIdeaRef.current}\n\n${trimmed}`
-        pendingIdeaRef.current = null
-        await buildPlan(combined)
-        return
-      }
-
-      // Revising an existing plan -> straight to the agent.
-      if (getBlueprint()) {
-        await buildPlan(trimmed)
-        return
-      }
-
-      // Brand-new idea: try a single, non-blocking clarification pass.
-      setThinking(true)
-      const clar = await clarifyIdea(trimmed, locale)
-      setThinking(false)
-      if (clar.ok && clar.data.needsClarification && clar.data.questions.length > 0) {
-        pendingIdeaRef.current = trimmed
-        const qtext = clar.data.questions.map((q) => q.question).join("\n")
-        push({ role: "assistant", text: qtext, clarify: clar.data.questions })
-        return
-      }
+      // Agent decides everything — orientation, style, voice — no clarification step.
       await buildPlan(trimmed)
-    },
-    [thinking, getBlueprint, buildPlan, locale, push],
-  )
-
-  const answerClarify = useCallback(
-    async (answer: string) => {
-      if (thinking) return
-      push({ role: "user", text: answer })
-      if (pendingIdeaRef.current) {
-        const combined = `${pendingIdeaRef.current}\n\n${answer}`
-        pendingIdeaRef.current = null
-        await buildPlan(combined)
-      } else {
-        await buildPlan(answer)
-      }
     },
     [thinking, buildPlan, push],
   )
 
   const reset = useCallback(() => {
-    pendingIdeaRef.current = null
     setMessages([])
     setError(null)
     setThinking(false)
     setStatusSteps([])
   }, [])
 
-  return { messages, thinking, statusSteps, error, submit, answerClarify, reset }
+  return { messages, thinking, statusSteps, error, submit, reset }
 
 }

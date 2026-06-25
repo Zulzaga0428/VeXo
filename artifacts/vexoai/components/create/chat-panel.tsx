@@ -13,7 +13,6 @@ interface ChatPanelProps {
   hasBlueprint: boolean
   disabled?: boolean
   onSubmit: (text: string) => void
-  onAnswerClarify: (answer: string) => void
   onNewVideo?: () => void
 }
 
@@ -25,7 +24,6 @@ export function ChatPanel({
   hasBlueprint,
   disabled = false,
   onSubmit,
-  onAnswerClarify,
   onNewVideo,
 }: ChatPanelProps) {
   const t = (mn: string, en: string) => (locale === "mn" ? mn : en)
@@ -122,22 +120,6 @@ export function ChatPanel({
             >
               {m.text}
             </div>
-            {m.clarify && m.clarify.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {m.clarify.flatMap((q) =>
-                  q.options.map((opt) => (
-                    <button
-                      key={`${q.question}-${opt}`}
-                      onClick={() => onAnswerClarify(opt)}
-                      disabled={thinking || disabled}
-                      className="rounded-full border border-border bg-white/[0.04] px-3 py-1 text-xs backdrop-blur-sm transition hover:border-accent/50 hover:bg-accent/10 hover:text-accent disabled:opacity-50"
-                    >
-                      {opt}
-                    </button>
-                  )),
-                )}
-              </div>
-            )}
           </div>
         ))}
 

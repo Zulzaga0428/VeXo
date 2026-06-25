@@ -98,14 +98,6 @@ export function CreatePageClient() {
     },
     [gen.phase, chat],
   )
-  const handleAnswerClarify = useCallback(
-    (answer: string) => {
-      if (gen.phase === "running") return
-      chat.answerClarify(answer)
-    },
-    [gen.phase, chat],
-  )
-
   // The timeline/result must follow the snapshot the run started with, not the
   // live (possibly-edited) plan.
   const genBlueprint = gen.activeBlueprint ?? blueprint
@@ -165,7 +157,6 @@ export function CreatePageClient() {
               statusSteps={chat.statusSteps}
               hasBlueprint={!!blueprint}
               onSubmit={handleSubmit}
-              onAnswerClarify={handleAnswerClarify}
               disabled={chatDisabled}
               onNewVideo={handleNewVideo}
             />
@@ -238,7 +229,6 @@ export function CreatePageClient() {
             statusSteps={chat.statusSteps}
             hasBlueprint={!!blueprint}
             onSubmit={handleSubmit}
-            onAnswerClarify={handleAnswerClarify}
             disabled={chatDisabled}
           />
         </div>

@@ -15,6 +15,29 @@ export function toErrStr(e: unknown): string {
   }
 }
 
+/**
+ * FAL.ai client throws structured error objects with `status` + `body`.
+ * This extracts the HTTP status code so callers can distinguish permanent
+ * validation failures (4xx) from transient network/server errors (5xx).
+ */
+export function falHttpStatus(e: unknown): number | undefined {
+  return (e as { status?: number })?.status
+}
+
+/**
+ * Serialize a FAL.ai error's `body.detail` array so the full validation
+ * message is visible in logs rather than "[Object]".
+ */
+export function falErrorDetail(e: unknown): string {
+  try {
+    const body = (e as { body?: unknown })?.body
+    if (!body) return ""
+    return JSON.stringify(body)
+  } catch {
+    return ""
+  }
+}
+
 type Meta = Record<string, unknown>
 
 function write(level: "info" | "warn" | "error", msg: string, meta?: Meta) {

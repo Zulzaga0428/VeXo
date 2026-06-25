@@ -1,5 +1,15 @@
 import { fal } from "@fal-ai/client"
-import { logger, toErrStr } from "@/lib/logger"
+import { logger, toErrStr, falHttpStatus, falErrorDetail } from "@/lib/logger"
+
+/**
+ * Returns true for permanent FAL.ai validation failures (4xx) that must NOT
+ * be retried — the same bad payload will always produce the same error.
+ * 5xx / network errors ARE transient and safe to retry later.
+ */
+function isFalPermanentError(e: unknown): boolean {
+  const s = falHttpStatus(e)
+  return s !== undefined && s >= 400 && s < 500
+}
 
 fal.config({
   credentials: process.env.FAL_KEY,
@@ -237,7 +247,17 @@ export async function getAvatarVideoStatus(requestId: string): Promise<{
       }
     }
   } catch (error) {
-    logger.warn("[avatar] FAL status error", { err: toErrStr(error) })
+    if (isFalPermanentError(error)) {
+      // 4xx (e.g. 422 Unprocessable Entity) — permanent validation failure.
+      // Returning "failed" triggers an immediate refund and stops the retry loop.
+      logger.error("[avatar] FAL permanent validation error — stopping retry", {
+        httpStatus: falHttpStatus(error),
+        detail: falErrorDetail(error),
+        err: toErrStr(error),
+      })
+      return { status: "failed", progress: 0 }
+    }
+    logger.warn("[avatar] FAL status error (transient)", { err: toErrStr(error) })
     return { status: "processing", progress: 30 }
   }
 }
@@ -280,7 +300,15 @@ export async function getVideoStatus(
       }
     }
   } catch (error) {
-    logger.warn("[v0] FAL status check error", { err: toErrStr(error) })
+    if (isFalPermanentError(error)) {
+      logger.error("[v0] FAL permanent validation error — stopping retry", {
+        httpStatus: falHttpStatus(error),
+        detail: falErrorDetail(error),
+        err: toErrStr(error),
+      })
+      return { status: "failed", progress: 0 }
+    }
+    logger.warn("[v0] FAL status check error (transient)", { err: toErrStr(error) })
     return { status: "processing", progress: 30 }
   }
 }
@@ -310,7 +338,15 @@ export async function getLipsyncStatus(
       return { status: "processing" }
     }
   } catch (error) {
-    logger.warn("[lipsync] FAL status error", { err: toErrStr(error) })
+    if (isFalPermanentError(error)) {
+      logger.error("[lipsync] FAL permanent validation error — stopping retry", {
+        httpStatus: falHttpStatus(error),
+        detail: falErrorDetail(error),
+        err: toErrStr(error),
+      })
+      return { status: "failed" }
+    }
+    logger.warn("[lipsync] FAL status error (transient)", { err: toErrStr(error) })
     return { status: "processing" }
   }
 }

@@ -12,7 +12,6 @@ import { ChatPanel } from "@/components/create/chat-panel"
 import { ArtifactsPanel, type CreateView } from "@/components/create/artifacts-panel"
 import BlueprintCard from "@/components/create/blueprint-card"
 import { GenerationTimeline } from "@/components/create/generation-timeline"
-import { VideoResult } from "@/components/create/video-result"
 
 export function CreatePageClient() {
   const searchParams = useSearchParams()
@@ -203,26 +202,17 @@ export function CreatePageClient() {
           {/* Preview / editor */}
           <div className="min-w-0 flex-1 overflow-hidden">
             {view === "generation" && genBlueprint ? (
-              gen.phase === "done" && gen.finalUrl ? (
-                <VideoResult
-                  locale={locale}
-                  blueprint={genBlueprint}
-                  finalUrl={gen.finalUrl}
-                  scenes={gen.scenes}
-                  onNewVideo={handleNewVideo}
-                  onBackToPlan={() => setView("plan")}
-                />
-              ) : (
-                <GenerationTimeline
-                  locale={locale}
-                  blueprint={genBlueprint}
-                  scenes={gen.scenes}
-                  phase={gen.phase}
-                  error={gen.error}
-                  onRetry={handleGenerate}
-                  onBackToPlan={() => setView("plan")}
-                />
-              )
+              <GenerationTimeline
+                locale={locale}
+                blueprint={genBlueprint}
+                scenes={gen.scenes}
+                phase={gen.phase}
+                error={gen.error}
+                finalUrl={gen.finalUrl}
+                onRetry={handleGenerate}
+                onBackToPlan={() => setView("plan")}
+                onNewVideo={handleNewVideo}
+              />
             ) : blueprint ? (
               <div className="h-full overflow-y-auto">
                 <BlueprintCard

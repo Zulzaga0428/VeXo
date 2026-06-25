@@ -11,9 +11,14 @@ export const maxDuration = 300
 
 type AspectRatio = "16:9" | "9:16" | "1:1"
 
+// FAL ffmpeg-api/merge-videos only accepts these resolution enums:
+// square_hd | square | portrait_4_3 | portrait_16_9 | landscape_4_3 | landscape_16_9.
+// A vertical 9:16 video is "portrait_16_9" (portrait orientation, 16:9 ratio).
+// The previous "portrait_9_16" is NOT a valid value and made every multi-clip
+// merge fail with 422 Unprocessable Entity.
 const RESOLUTION_MAP: Record<AspectRatio, string> = {
   "16:9": "landscape_16_9",
-  "9:16": "portrait_9_16",
+  "9:16": "portrait_16_9",
   "1:1": "square",
 }
 
@@ -150,7 +155,15 @@ export async function POST(req: NextRequest) {
       throw e
     }
   } catch (error) {
-    void error
+    // Surface the REAL FAL failure (validation detail / HTTP status) so a 422 like
+    // an invalid merge payload is debuggable from the logs instead of hiding behind
+    // a generic "Unprocessable Entity".
+    const anyErr = error as { status?: number; body?: { detail?: unknown } }
+    logger.error("[stitch-video] failed", {
+      httpStatus: anyErr?.status,
+      detail: anyErr?.body?.detail ? JSON.stringify(anyErr.body.detail).slice(0, 500) : undefined,
+      err: toErrStr(error),
+    })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Stitch failed" },
       { status: 500 },

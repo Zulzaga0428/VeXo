@@ -121,11 +121,16 @@ ${SCENE_GUIDE_MN}
 - visualPrompt үргэлж АНГЛИАР (видео модель англиар ажилладаг).
 - script (яриа) МОНГОЛоор.
 - durationSec-г script-ийн уртад тааруул: 2.5 үг/секунд хэмнэлтэй. Яриагүй b_roll бол 8-12 секунд.
-- "reply" талбарт хэрэглэгчид зориулсан 1-2 өгүүлбэр найрсаг хариу (монголоор) — хоолойн нэр, кредит, scene тоог дурдаарай.
+- description: scene бүрт 5-8 үгийн монгол тайлбар (хэрэглэгчид харуулна). Жишээ: "Танилцуулагч камер руу ярьж байна", "Бариста кофе бэлдэж байна".
+- category: реклам ангилал монголоор. Жишээ: "Богино реклам", "Брэнд танилцуулга", "Бүтээгдэхүүний реклам", "Сурталчилгаа", "Компанийн танилцуулга".
 - orientation: богино/нийгмийн сүлжээ бол "9:16", өргөн/YouTube бол "16:9".
+- "reply" монголоор, 3-5 өгүүлбэр:
+  1. Реклам ангилал + хоолойн нэр + scene тоо
+  2. Scene тус бүрийн тайлбарыг bullet-аар жагсаа: "• Scene N (Xс): тайлбар"
+  3. Нийт кредит
 
 Дараах JSON БҮТЦИЙГ л буцаа (tools дуусгасны дараа):
-{"reply":"...","blueprint":{"title":"...","language":"mn","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":10,"script":"...","visualPrompt":"..."}]}}`
+{"reply":"...","blueprint":{"title":"...","category":"Богино реклам","language":"mn","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":10,"description":"Танилцуулагч камер руу ярьж байна","script":"...","visualPrompt":"..."}]}}`
   }
 
   return `You are VexoAi's video director. Turn the user's idea into a complete, editable Video Plan (blueprint).
@@ -147,11 +152,16 @@ RULES:
 - visualPrompt always in ENGLISH (the video model is English-driven).
 - script (spoken line) in the user's language.
 - Match durationSec to script length: ~2.5 words/second speaking pace. Silent b_roll scenes: 8-12 s.
-- "reply" is a friendly 1-2 sentence message mentioning the chosen voice, credit cost, and scene count.
+- description: 5-8 word Mongolian label per scene shown in the UI. e.g. "Танилцуулагч камер руу ярьж байна".
+- category: short Mongolian category for the ad. e.g. "Богино реклам", "Брэнд танилцуулга", "Бүтээгдэхүүний реклам".
 - orientation: "9:16" for short/social, "16:9" for wide/YouTube.
+- "reply" in Mongolian, 3-5 sentences:
+  1. Category + chosen voice + scene count
+  2. Bullet list of scenes: "• Scene N (Xs): Mongolian description"
+  3. Total credits
 
 After tools are done, return ONLY this JSON structure:
-{"reply":"...","blueprint":{"title":"...","language":"en","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":10,"script":"...","visualPrompt":"..."}]}}`
+{"reply":"...","blueprint":{"title":"...","category":"Богино реклам","language":"en","orientation":"9:16","model":"${model}","captions":false,"scenes":[{"type":"a_roll","durationSec":10,"description":"Танилцуулагч камер руу ярьж байна","script":"...","visualPrompt":"..."}]}}`
 }
 
 

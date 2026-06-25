@@ -51,6 +51,8 @@ export interface BlueprintScene {
   script: string
   // English prompt that drives the video model (motion / cinematography).
   visualPrompt: string
+  // Short Mongolian description of what this scene does (shown in the UI).
+  description?: string
   // Which character speaks in this scene (a_roll only).
   // 0 / undefined = primary (avatar+voice); 1+ = characters[n-1]
   characterIdx?: number
@@ -67,6 +69,8 @@ export interface VideoBlueprint {
   id: string
   version: number
   title: string
+  // Short Mongolian category label the agent assigns, e.g. "Богино реклам", "Брэнд танилцуулга".
+  category?: string
   language: "mn" | "en"
   orientation: Orientation
   model: BlueprintModel
@@ -116,10 +120,12 @@ export interface RawScene {
   narration?: string
   visualPrompt?: string
   summary?: string
+  description?: string
 }
 
 export interface RawBlueprint {
   title?: string
+  category?: string
   language?: string
   orientation?: string
   model?: string
@@ -164,6 +170,7 @@ export function normalizeBlueprint(
       durationSec: clampDuration(s.durationSec ?? s.duration),
       script: script.trim(),
       visualPrompt: visualPrompt.trim(),
+      description: typeof s.description === "string" ? s.description.trim() : undefined,
       status: "idle",
       progress: 0,
     }
@@ -187,6 +194,7 @@ export function normalizeBlueprint(
     id: opts.keepId ?? newId(),
     version: opts.version ?? 1,
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "Шинэ видео",
+    category: typeof raw.category === "string" && raw.category.trim() ? raw.category.trim() : undefined,
     language,
     orientation,
     model,

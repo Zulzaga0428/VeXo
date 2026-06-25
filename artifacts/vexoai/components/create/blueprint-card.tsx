@@ -432,9 +432,10 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
           <div className="vx-hud">
             <div className="vx-hg">
               <span className={`vx-rec${mode !== "idle" ? " live" : ""}`}><span className="vx-dot" />{mode === "rendering" ? "Rendering" : mode === "done" ? "Done" : "REC"}</span>
-              <span className="vx-sep">/</span><span>Blueprint</span>
+              <span className="vx-sep">/</span>
+              <span>{bp.category || "Blueprint"}</span>
             </div>
-            <div className="vx-hg"><span className="vx-tag">id: bapjys</span><span className="vx-sep">·</span><span>{mode === "rendering" ? "working" : mode === "done" ? "ready ✓" : `${N} scene`}</span></div>
+            <div className="vx-hg"><span className="vx-tag">{bp.title ? bp.title.slice(0, 24) : "Untitled"}</span><span className="vx-sep">·</span><span>{mode === "rendering" ? "working" : mode === "done" ? "ready ✓" : `${N} scene`}</span></div>
           </div>
 
           {/* IDLE */}
@@ -458,7 +459,7 @@ export default function BlueprintCard({ blueprint, onChange, onGenerate, generat
                     <div className="vx-scene" key={i}>
                       <div className={`vx-shd${open ? " open" : ""}`} onClick={() => setField(i, "collapsed", !sc.collapsed)}>
                         <span className="vx-snum">Scene {String(i + 1).padStart(2, "0")}</span>
-                        {!open && <span className="vx-ssum">{sc.script ? sc.script.slice(0, 44) + (sc.script.length > 44 ? "…" : "") : "Хоосон scene"}</span>}
+                        {!open && <span className="vx-ssum">{bp.scenes[i]?.description || (sc.script ? sc.script.slice(0, 44) + (sc.script.length > 44 ? "…" : "") : "Хоосон scene")}</span>}
                         <span className="vx-shp">
                           <button className="vx-ib" onClick={(e) => { e.stopPropagation(); setField(i, "collapsed", !sc.collapsed); }}><Svg d={open ? I.chevUp : I.chev} /></button>
                           {N > 1 && <button className="vx-ib del" onClick={(e) => delScene(i, e)}><Svg d={I.x} /></button>}

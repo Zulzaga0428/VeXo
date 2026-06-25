@@ -252,6 +252,22 @@ export async function createAvatarVideo(params: {
   }
 }
 
+// Extract the output video URL from a FAL result across the handful of shapes
+// different models return: { video:{url} }, { output:{video:{url}} },
+// { video_url }, { output:{video_url} }, or { videos:[{url}] }.
+function extractVideoUrl(res: unknown): string | undefined {
+  const data = (res as { data?: Record<string, any> } | undefined)?.data
+  if (!data) return undefined
+  return (
+    data.video?.url ||
+    data.output?.video?.url ||
+    data.video_url ||
+    data.output?.video_url ||
+    (Array.isArray(data.videos) ? data.videos[0]?.url : undefined) ||
+    (Array.isArray(data.output?.videos) ? data.output.videos[0]?.url : undefined)
+  )
+}
+
 export async function getAvatarVideoStatus(requestId: string): Promise<{
   status: string
   videoUrl?: string
@@ -263,11 +279,16 @@ export async function getAvatarVideoStatus(requestId: string): Promise<{
       logs: true,
     })
     if (status.status === "COMPLETED") {
-      const res = (await fal.queue.result(KLING_AVATAR_ENDPOINT, { requestId })) as {
-        data?: { video?: { url: string }; output?: { video?: { url: string } } }
+      const res = await fal.queue.result(KLING_AVATAR_ENDPOINT, { requestId })
+      const videoUrl = extractVideoUrl(res)
+      // COMPLETED but no usable url is a terminal FAILURE (no result to deliver) —
+      // report "failed" so the charge is refunded instead of settled for nothing.
+      if (!videoUrl) {
+        logger.error("[avatar] COMPLETED but no video url in result — treating as failed", {
+          requestId,
+        })
+        return { status: "failed", progress: 0 }
       }
-      const data = res.data
-      const videoUrl = data?.video?.url || data?.output?.video?.url
       return { status: "succeed", videoUrl, progress: 100 }
     } else if ((status.status as string) === "FAILED") {
       return { status: "failed", progress: 0 }
@@ -311,12 +332,16 @@ export async function getVideoStatus(
 
     if (status.status === "COMPLETED") {
       // New client wraps the model output in `{ data, requestId }`.
-      const res = (await fal.queue.result(endpoint, { requestId })) as {
-        data?: { video?: { url: string }; output?: { video?: { url: string } } }
+      const res = await fal.queue.result(endpoint, { requestId })
+      const videoUrl = extractVideoUrl(res)
+      // COMPLETED but no usable url is a terminal FAILURE — report "failed" so the
+      // charge is refunded instead of settled for a video we can't deliver.
+      if (!videoUrl) {
+        logger.error("[v0] COMPLETED but no video url in result — treating as failed", {
+          requestId,
+        })
+        return { status: "failed", progress: 0 }
       }
-      const data = res.data
-      const videoUrl = data?.video?.url || data?.output?.video?.url
-
       return {
         status: "succeed",
         videoUrl,

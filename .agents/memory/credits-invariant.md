@@ -40,6 +40,23 @@ just disables the fallback (the job then refunds via the durable RPC) — it can
 NEVER break or duplicate a refund. The status route recovers the FAL endpoint from
 the charge row (`getCharge`) when the map is empty.
 
+**COMPLETED-without-a-usable-output-url is a FAILURE, never a success:** the FAL
+status helpers (`getAvatarVideoStatus`/`getVideoStatus`/`getLipsyncStatus`) must
+only return `succeed` when a video URL is actually resolvable; a COMPLETED job with
+no extractable url returns `failed` so the charge is REFUNDED, not settled. Result
+URLs come back under several shapes — extract via a shared helper covering
+`video.url`, `output.video.url`, `video_url`, `output.video_url`, `videos[0].url`,
+`output.videos[0].url`. **Why:** a missing-url + `status:"succeed"` settled the
+charge AND the client poll never got a url (timed out → error → retry re-submitted
+= double charge). This was the "reaches 100% then error, retry burns credits" bug.
+
+**Retry must re-poll, not re-submit, unless the failure is TERMINAL:** `pollUntilDone`
+returns `terminal` (true only when FAL said `failed`). The orchestrator clears the
+saved `job` (allowing a fresh submit+charge) ONLY on `terminal:true`; on a timeout
+it KEEPS the requestId so a retry re-polls the same (possibly still-alive) job.
+**Why:** dropping the job on every non-ok poll meant a slow-but-succeeding job got
+re-submitted and recharged on retry.
+
 **Known best-effort gap (billing-safe):** if two pollers race the same natural
 failure, the transfer loser returns `processing` then later sees `failed` while
 the winner's paid pro successor may still settle — a charged *result* orphan, not

@@ -268,9 +268,14 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
               onProgress: (p) => patch(scene.id, { progress: Math.min(95, Math.max(45, p)) }),
             })
             if (!done.ok) {
-              // Drop the dead job so an explicit retry can re-submit.
-              st = { ...st, job: null }
-              setState(st)
+              // Only drop the job on a TERMINAL failure (FAL said "failed" and the
+              // charge was already refunded), so a retry re-submits cleanly. On a
+              // timeout the job may still be alive/succeeding — keep it so a retry
+              // re-polls the SAME requestId instead of re-submitting and recharging.
+              if (done.terminal) {
+                st = { ...st, job: null }
+                setState(st)
+              }
               throw new Error(done.error)
             }
             st = { ...st, videoUrl: done.videoUrl, job: null }
@@ -323,8 +328,13 @@ export function useVideoGeneration(opts: { locale: "mn" | "en"; recover?: boolea
               },
             )
             if (!done.ok) {
-              st = { ...st, job: null }
-              setState(st)
+              // See a_roll above: only drop the job on a terminal failure so a
+              // retry never re-submits (and recharges) a job that may still be
+              // alive after a timeout.
+              if (done.terminal) {
+                st = { ...st, job: null }
+                setState(st)
+              }
               throw new Error(done.error)
             }
             st = { ...st, videoUrl: done.videoUrl, job: null }

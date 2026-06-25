@@ -244,10 +244,14 @@ export function generateImage(input: { prompt: string; aspectRatio?: string; mod
 }
 
 // Poll a status endpoint until it succeeds, fails, or times out.
+// `terminal` distinguishes a genuine, settled failure (FAL reported "failed", so
+// the server already refunded the charge — a retry must re-submit) from a
+// timeout/transient stop (the job may still be alive and the charge is still in
+// flight — a retry should re-poll the SAME requestId, never re-submit/recharge).
 export async function pollUntilDone(
   poll: () => Promise<ApiResult<{ status: string; progress: number; videoUrl?: string }>>,
   opts: { onProgress?: (p: number) => void; intervalMs?: number; timeoutMs?: number } = {},
-): Promise<{ ok: true; videoUrl: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; videoUrl: string } | { ok: false; error: string; terminal: boolean }> {
   const interval = opts.intervalMs ?? 4000
   const timeout = opts.timeoutMs ?? 6 * 60 * 1000
   const start = Date.now()
@@ -262,10 +266,10 @@ export async function pollUntilDone(
         return { ok: true, videoUrl }
       }
       if (status === "failed") {
-        return { ok: false, error: "Видео үүсгэлт амжилтгүй боллоо" }
+        return { ok: false, error: "Видео үүсгэлт амжилтгүй боллоо", terminal: true }
       }
     }
     await new Promise((r) => setTimeout(r, interval))
   }
-  return { ok: false, error: "Хугацаа хэтэрлээ. Дахин оролдоно уу." }
+  return { ok: false, error: "Хугацаа хэтэрлээ. Дахин оролдоно уу.", terminal: false }
 }

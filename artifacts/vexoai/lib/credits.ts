@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { logger, toErrStr } from "@/lib/logger"
 
 // Cost per action in credits — single source of truth lives in the client-safe
 // module so the UI estimate and the server charge can never drift apart.
@@ -80,17 +81,16 @@ export async function refundCredits(userId: string, cost: number): Promise<boole
       p_amount: cost,
     })
     if (error) {
-      console.error("[credits] REFUND_FAILED rpc error", { userId, cost, error: error.message })
+      logger.error("[credits] REFUND_FAILED rpc error", { userId, cost, err: error.message })
       return false
     }
     if (data === null) {
-      // No profile row matched (or non-positive amount) — nothing was credited.
-      console.error("[credits] REFUND_FAILED no profile row", { userId, cost })
+      logger.error("[credits] REFUND_FAILED no profile row", { userId, cost })
       return false
     }
     return true
   } catch (e) {
-    console.error("[credits] REFUND_FAILED rpc threw", { userId, cost }, e)
+    logger.error("[credits] REFUND_FAILED rpc threw", { userId, cost, err: toErrStr(e) })
     return false
   }
 }
@@ -157,12 +157,12 @@ export async function recordCharge(
       ;({ error } = await attempt())
     }
     if (error) {
-      console.error("[credits] recordCharge failed:", error.message)
+      logger.error("[credits] recordCharge failed", { err: error.message })
       return false
     }
     return true
   } catch (e) {
-    console.error("[credits] recordCharge error:", e)
+    logger.error("[credits] recordCharge error", { err: toErrStr(e) })
     return false
   }
 }
@@ -176,12 +176,12 @@ export async function refundCharge(requestId: string): Promise<number> {
       p_request_id: requestId,
     })
     if (error) {
-      console.error("[credits] refundCharge rpc error:", error.message)
+      logger.error("[credits] refundCharge rpc error", { err: error.message })
       return 0
     }
     return (data as number) ?? 0
   } catch (e) {
-    console.error("[credits] refundCharge error:", e)
+    logger.error("[credits] refundCharge error", { err: toErrStr(e) })
     return 0
   }
 }
@@ -207,12 +207,12 @@ export async function transferCharge(
       p_new_model: newModel,
     })
     if (error) {
-      console.error("[credits] transferCharge rpc error:", error.message)
+      logger.error("[credits] transferCharge rpc error", { err: error.message })
       return false
     }
     return ((data as number) ?? 0) > 0
   } catch (e) {
-    console.error("[credits] transferCharge error:", e)
+    logger.error("[credits] transferCharge error", { err: toErrStr(e) })
     return false
   }
 }
@@ -231,14 +231,14 @@ export async function getCharge(
       .eq("request_id", requestId)
       .maybeSingle()
     if (error) {
-      console.error("[credits] getCharge error:", error.message)
+      logger.error("[credits] getCharge error", { err: error.message })
       return null
     }
     if (!data) return null
     const row = data as { model: string | null; status: string; user_id: string; cost: number }
     return { model: row.model, status: row.status, userId: row.user_id, cost: row.cost }
   } catch (e) {
-    console.error("[credits] getCharge error:", e)
+    logger.error("[credits] getCharge error", { err: toErrStr(e) })
     return null
   }
 }
@@ -254,12 +254,12 @@ export async function settleCharge(requestId: string): Promise<number> {
       p_request_id: requestId,
     })
     if (error) {
-      console.error("[credits] settleCharge rpc error:", error.message)
+      logger.error("[credits] settleCharge rpc error", { err: error.message })
       return 0
     }
     return (data as number) ?? 0
   } catch (e) {
-    console.error("[credits] settleCharge error:", e)
+    logger.error("[credits] settleCharge error", { err: toErrStr(e) })
     return 0
   }
 }
@@ -336,7 +336,7 @@ export async function compensateUnrecordedCharge(
     }
     await sleep(200 * (attempt + 1))
   }
-  console.error("[credits] compensate RPC failed after retries:", lastErr)
+  logger.error("[credits] compensate RPC failed after retries", { err: lastErr })
 
   // ── Tier 2: persist a guarded `pending` row so the poll/sweep recovers it ──
   // No credit happens here; recovery flows through the same request_id guard, so

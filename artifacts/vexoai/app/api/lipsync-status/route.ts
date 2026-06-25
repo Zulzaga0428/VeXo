@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 import { getLipsyncStatus } from "@/lib/fal-video"
 import { refundCharge, settleCharge, transferCharge, getCharge } from "@/lib/credits"
@@ -91,24 +92,18 @@ export async function GET(request: NextRequest) {
         if (transferred) {
           pendingLipsyncJobs.delete(requestId)
           pendingLipsyncJobs.set(newId, { ...job, engine: "pro", model: PRO_ENDPOINT })
-          console.warn("[lipsync-status] falling back to lipsync-2-pro, new requestId:", newId)
+          logger.warn("[lipsync-status] falling back to lipsync-2-pro", { newRequestId: newId })
           return NextResponse.json({ status: "fallback", requestId: newId, engine: "pro" })
         }
 
         // We lost the ownership race (another poll/instance already resolved or
         // transferred this charge). Our pro job has no charge row — discard it as
         // an orphan and let the owner's outcome stand.
-        console.warn(
-          "[lipsync-status] fallback transfer lost ownership; discarding orphan pro job:",
-          newId,
-        )
+        logger.warn("[lipsync-status] fallback transfer lost ownership; discarding orphan pro job", { newId })
         pendingLipsyncJobs.delete(requestId)
         return NextResponse.json({ status: "processing" })
       } catch (e) {
-        console.warn(
-          "[lipsync-status] pro fallback submit failed:",
-          e instanceof Error ? e.message : e,
-        )
+        logger.warn("[lipsync-status] pro fallback submit failed", { err: toErrStr(e) })
         // Fall through to refund below.
       }
     }
@@ -120,7 +115,7 @@ export async function GET(request: NextRequest) {
     pendingLipsyncJobs.delete(requestId)
     return NextResponse.json({ status: "failed", error: "Lip-sync failed on all engines" })
   } catch (error) {
-    console.error("[lipsync-status] unexpected error:", error)
+    logger.error("[lipsync-status] unexpected error", { err: toErrStr(error) })
     // Return processing so the client retries rather than hard-failing.
     return NextResponse.json({ status: "processing" })
   }

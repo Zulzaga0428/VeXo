@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
 
@@ -129,7 +130,7 @@ Respond with ONLY this JSON format, nothing else:
       narration: (parsed.narration || "").trim(),
     })
   } catch (error) {
-    console.error("Auto-scene error:", error)
+    logger.error("Auto-scene error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to analyze image" }, { status: 500 })
   }
 }

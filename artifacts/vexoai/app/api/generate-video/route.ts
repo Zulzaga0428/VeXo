@@ -7,6 +7,7 @@ import {
   compensateUnrecordedCharge,
   CREDIT_COST,
 } from "@/lib/credits"
+import { logger, toErrStr } from "@/lib/logger"
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,13 +93,11 @@ export async function POST(request: NextRequest) {
         mode: result.mode,
       })
       if (comp.status === "failed") {
-        // Could neither record nor refund — the user is still debited. Emit a
-        // greppable incident so it can be alerted on and recovered manually.
-        console.error("[generate-video] BILLING_INCIDENT charge_unrecovered", {
+        logger.error("[generate-video] BILLING_INCIDENT charge_unrecovered", {
           requestId: result.requestId, userId: charge.userId, cost, kind: "video",
         })
       } else {
-        console.error("[generate-video] CHARGE_NOT_RECORDED resolved via compensation", {
+        logger.warn("[generate-video] CHARGE_NOT_RECORDED resolved via compensation", {
           requestId: result.requestId, userId: charge.userId, cost, outcome: comp.status,
         })
       }
@@ -111,7 +110,7 @@ export async function POST(request: NextRequest) {
       mode: result.mode,
     })
   } catch (error) {
-    console.error("Video generation error:", error)
+    logger.error("[generate-video] unhandled error", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Видео үүсгэхэд алдаа гарлаа" },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { fal } from "@fal-ai/client"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import { logger, toErrStr } from "@/lib/logger"
 
 if (process.env.FAL_KEY) {
   fal.config({ credentials: process.env.FAL_KEY })
@@ -40,7 +41,7 @@ async function lipSyncScene(videoUrl: string, audioUrl: string): Promise<string 
     const url = (result.data as { video?: { url: string } })?.video?.url
     return url ?? null
   } catch (e) {
-    console.error("[v0] lipSyncScene failed, will fall back to overlay:", e)
+    logger.warn("[v0] lipSyncScene failed, will fall back to overlay", { err: toErrStr(e) })
     return null
   }
 }

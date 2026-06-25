@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createAvatarVideo } from "@/lib/fal-video"
 import {
   chargeCredits,
@@ -48,11 +49,11 @@ export async function POST(request: NextRequest) {
     if (!recorded) {
       const comp = await compensateUnrecordedCharge(result.requestId, charge.userId, cost, "avatar")
       if (comp.status === "failed") {
-        console.error("[avatar-video] BILLING_INCIDENT charge_unrecovered", {
+        logger.error("[avatar-video] BILLING_INCIDENT charge_unrecovered", {
           requestId: result.requestId, userId: charge.userId, cost, kind: "avatar",
         })
       } else {
-        console.error("[avatar-video] CHARGE_NOT_RECORDED resolved via compensation", {
+        logger.error("[avatar-video] CHARGE_NOT_RECORDED resolved via compensation", {
           requestId: result.requestId, userId: charge.userId, cost, outcome: comp.status,
         })
       }
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ requestId: result.requestId })
   } catch (error) {
-    console.error("[avatar-video] error:", error)
+    logger.error("[avatar-video] error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }

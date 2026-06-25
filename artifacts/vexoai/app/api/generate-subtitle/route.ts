@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 
 fal.config({
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
       subtitles,
     })
   } catch (error) {
-    console.error("[v0] Subtitle generation error:", error)
+    logger.error("[v0] Subtitle generation error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to generate subtitles" },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { checkPayment } from "@/lib/qpay"
 import { createClient } from "@/lib/supabase/server"
 
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ paid: result.paid })
   } catch (error) {
-    console.error("Payment check error:", error)
+    logger.error("Payment check error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Payment check failed" },
       { status: 500 }

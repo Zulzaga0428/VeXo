@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { cambListVoices, isCambConfigured } from "@/lib/cambai"
 
 // camb.ai voices are shared studio voices (owner account). Keep the cache
@@ -34,7 +35,7 @@ export async function GET() {
       .sort((a, b) => a.id - b.id)
     return NextResponse.json({ voices })
   } catch (err) {
-    console.error("[v0] camb-voices error:", err instanceof Error ? err.message : err)
+    logger.error("[v0] camb-voices error:", { err: toErrStr(err instanceof Error ? err.message : err) })
     return NextResponse.json({ voices: [] })
   }
 }

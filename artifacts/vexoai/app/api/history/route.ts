@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 
 export async function GET() {
@@ -23,7 +24,7 @@ export async function GET() {
 
     return NextResponse.json({ videos: videos || [] })
   } catch (error) {
-    console.error("History error:", error)
+    logger.error("History error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 })
   }
 }

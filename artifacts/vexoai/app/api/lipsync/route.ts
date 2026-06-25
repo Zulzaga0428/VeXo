@@ -8,6 +8,7 @@ import {
   CREDIT_COST,
 } from "@/lib/credits"
 import { pendingLipsyncJobs, type LipsyncEngine } from "@/lib/lipsync-jobs"
+import { logger, toErrStr } from "@/lib/logger"
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -79,10 +80,9 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       if (activeEngine === "natural") {
         // LatentSync submit failed — try lipsync-2-pro immediately
-        console.warn(
-          "[lipsync] LatentSync submit failed, falling back to lipsync-2-pro:",
-          e instanceof Error ? e.message : e,
-        )
+        logger.warn("[lipsync] LatentSync submit failed, falling back to lipsync-2-pro", {
+          err: toErrStr(e),
+        })
         activeEngine = "pro"
         const result = (await fal.queue.submit("fal-ai/sync-lipsync/v2", {
           input: engineInput("pro", videoUrl, audioUrl) as never,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       if (outcome.status === "failed") {
         // Nothing recorded and nothing credited: the user is still debited with
         // no automatic recovery. Surface loudly for manual reconciliation.
-        console.error("[lipsync] BILLING_INCIDENT charge unrecorded and uncompensated", {
+        logger.error("[lipsync] BILLING_INCIDENT charge unrecorded and uncompensated", {
           requestId,
           userId: charge.userId,
           cost: CREDIT_COST.lipsync,
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ requestId, engine: activeEngine })
   } catch (error) {
     await refundCredits(charge.userId, CREDIT_COST.lipsync)
-    console.error("[lipsync] submit error:", error)
+    logger.error("[lipsync] submit error", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Lip-sync submit failed" },
       { status: 500 },

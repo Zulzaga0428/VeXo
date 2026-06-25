@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@supabase/supabase-js"
 import { checkPayment } from "@/lib/qpay"
 
@@ -78,7 +79,7 @@ async function handleCallback(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Payment callback error:", error)
+    logger.error("Payment callback error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Callback failed" }, { status: 500 })
   }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 
 fal.config({ credentials: process.env.FAL_KEY })
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url })
   } catch (error) {
-    console.error("[v0] Image upload error:", error)
+    logger.error("[v0] Image upload error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Зураг оруулахад алдаа гарлаа" },
       { status: 500 }

@@ -38,8 +38,8 @@ export function startReconcileScheduler(): void {
   if (started) return
 
   if (!isSchedulerEnabled()) {
-    console.log(
-      "[reconcile] scheduler disabled (set RECONCILE_SWEEP_ENABLED=true to enable outside production)",
+    process.stdout.write(
+      JSON.stringify({ level: "info", msg: "[reconcile] scheduler disabled (set RECONCILE_SWEEP_ENABLED=true to enable outside production)" }) + "\n",
     )
     return
   }
@@ -65,10 +65,12 @@ export function startReconcileScheduler(): void {
       const { reconcilePendingCharges } = await import("@/lib/reconcile-charges")
       const summary = await reconcilePendingCharges({ olderThanMinutes, limit })
       if (summary.scanned > 0 || summary.errors > 0) {
-        console.log("[reconcile] scheduled sweep:", summary)
+        const { logger } = await import("@/lib/logger")
+        logger.info("[reconcile] scheduled sweep", summary as unknown as Record<string, unknown>)
       }
     } catch (e) {
-      console.error("[reconcile] scheduled sweep error:", e)
+      const { logger, toErrStr } = await import("@/lib/logger")
+      logger.error("[reconcile] scheduled sweep error", { err: toErrStr(e) })
     } finally {
       running = false
     }
@@ -82,7 +84,7 @@ export function startReconcileScheduler(): void {
   const kickoff = setTimeout(tick, 30_000)
   if (typeof kickoff.unref === "function") kickoff.unref()
 
-  console.log(
-    `[reconcile] scheduler started: every ${intervalMinutes}m, olderThan=${olderThanMinutes}m, limit=${limit}`,
+  process.stdout.write(
+    JSON.stringify({ level: "info", msg: `[reconcile] scheduler started: every ${intervalMinutes}m, olderThan=${olderThanMinutes}m, limit=${limit}` }) + "\n",
   )
 }

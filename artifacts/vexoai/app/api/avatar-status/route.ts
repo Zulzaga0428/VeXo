@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { getAvatarVideoStatus } from "@/lib/fal-video"
 import { refundCharge, settleCharge } from "@/lib/credits"
 
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       videoUrl: result.videoUrl,
     })
   } catch (error) {
-    console.error("[avatar-status] error:", error)
+    logger.error("[avatar-status] error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to check status" }, { status: 500 })
   }
 }

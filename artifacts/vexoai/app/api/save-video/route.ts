@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { uploadFile } from "@/lib/storage"
 
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ video: data, pathname: publicUrl })
   } catch (error) {
-    console.error("Save video error:", error)
+    logger.error("Save video error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to save video" }, { status: 500 })
   }
 }

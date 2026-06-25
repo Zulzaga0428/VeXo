@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { getPublicUrl } from "@/lib/storage"
 
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     const url = getPublicUrl(video.video_url)
     return NextResponse.redirect(url)
   } catch (error) {
-    console.error("Error serving video:", error)
+    logger.error("Error serving video:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to serve video" }, { status: 500 })
   }
 }

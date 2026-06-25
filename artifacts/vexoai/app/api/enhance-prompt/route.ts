@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
 
 export async function POST(request: NextRequest) {
@@ -56,7 +57,7 @@ Keep it concise (max 80 words). Return ONLY the enhanced English prompt, no expl
     if (!response.ok) {
       await refundCredits(charge.userId, CREDIT_COST.enhance)
       const errorText = await response.text()
-      console.error("[v0] Claude API error:", errorText)
+      logger.error("[v0] Claude API error:", { err: toErrStr(errorText) })
       return NextResponse.json({ error: "Failed to enhance prompt" }, { status: 500 })
     }
 
@@ -65,7 +66,7 @@ Keep it concise (max 80 words). Return ONLY the enhanced English prompt, no expl
 
     return NextResponse.json({ enhancedPrompt })
   } catch (error) {
-    console.error("[v0] Enhance prompt error:", error)
+    logger.error("[v0] Enhance prompt error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to enhance prompt" }, { status: 500 })
   }
 }

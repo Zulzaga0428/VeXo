@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { uploadFile } from "@/lib/storage"
 
 export async function POST(request: Request) {
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url })
   } catch (error) {
-    console.error("[v0] Upload error:", error)
+    logger.error("[v0] Upload error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
       { status: 500 }

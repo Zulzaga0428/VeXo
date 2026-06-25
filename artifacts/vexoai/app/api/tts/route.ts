@@ -5,6 +5,7 @@ import { cambTextToSpeech } from "@/lib/cambai"
 import { getVoiceById } from "@/lib/voices-catalog"
 import { expandNumbersToMongolian } from "@/lib/number-to-words"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
+import { logger, toErrStr } from "@/lib/logger"
 
 fal.config({ credentials: process.env.FAL_KEY })
 
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ audioUrl, duration })
   } catch (error) {
-    console.error("TTS error:", error)
+    logger.error("[tts] unhandled error", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "TTS generation failed" },
       { status: 500 }

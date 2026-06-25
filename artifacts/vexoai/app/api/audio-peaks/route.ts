@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { fetchPublicResource } from "@/lib/safe-url"
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ supported: true, peaks: result.peaks, duration: result.duration })
   } catch (error) {
-    console.error("[audio-peaks] error:", error)
+    logger.error("[audio-peaks] error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Peaks failed" },
       { status: 500 },

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { logger, toErrStr } from "@/lib/logger"
 import {
   getVideoStatus,
   getAvatarVideoStatus,
@@ -70,12 +71,12 @@ export async function reconcilePendingCharges(opts?: {
       .order("created_at", { ascending: true })
       .limit(limit)
     if (error) {
-      console.error("[reconcile] query failed:", error.message)
+      logger.error("[reconcile] query failed", { err: error.message })
       return result
     }
     rows = (data ?? []) as ChargeRow[]
   } catch (e) {
-    console.error("[reconcile] query error:", e)
+    logger.error("[reconcile] query error", { err: toErrStr(e) })
     return result
   }
 
@@ -115,7 +116,7 @@ export async function reconcilePendingCharges(opts?: {
       }
     } catch (e) {
       result.errors++
-      console.error(`[reconcile] row ${row.request_id} error:`, e)
+      logger.error("[reconcile] row error", { requestId: row.request_id, err: toErrStr(e) })
     }
   }
 

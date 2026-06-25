@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 import { createClient } from "@/lib/supabase/server"
 
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     const url = await fal.storage.upload(blob)
     return NextResponse.json({ url, padded: true })
   } catch (error) {
-    console.error("[pad-audio] error:", error)
+    logger.error("[pad-audio] error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Pad failed" },
       { status: 500 },

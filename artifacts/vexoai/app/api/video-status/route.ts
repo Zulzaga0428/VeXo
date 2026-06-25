@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { getVideoStatus, type VexoModel, type GenerationMode } from "@/lib/fal-video"
 import { refundCharge, settleCharge } from "@/lib/credits"
 
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
       videoUrl: result.videoUrl,
     })
   } catch (error) {
-    console.error("Video status error:", error)
+    logger.error("Video status error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: "Failed to check video status" },
       { status: 500 }

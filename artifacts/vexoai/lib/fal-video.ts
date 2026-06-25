@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client"
+import { logger, toErrStr } from "@/lib/logger"
 
 fal.config({
   credentials: process.env.FAL_KEY,
@@ -167,7 +168,7 @@ export async function createVideoGeneration(params: {
       mode,
     }
   } catch (error) {
-    console.error("[v0] FAL video submit error:", error)
+    logger.error("[v0] FAL video submit error", { err: toErrStr(error) })
     throw error
   }
 }
@@ -205,7 +206,7 @@ export async function createAvatarVideo(params: {
     const { request_id } = await fal.queue.submit(KLING_AVATAR_ENDPOINT, { input })
     return { requestId: request_id }
   } catch (error) {
-    console.error("[avatar] FAL submit error:", error)
+    logger.error("[avatar] FAL submit error", { err: toErrStr(error) })
     throw error
   }
 }
@@ -236,7 +237,7 @@ export async function getAvatarVideoStatus(requestId: string): Promise<{
       }
     }
   } catch (error) {
-    console.error("[avatar] FAL status error:", error)
+    logger.warn("[avatar] FAL status error", { err: toErrStr(error) })
     return { status: "processing", progress: 30 }
   }
 }
@@ -279,7 +280,7 @@ export async function getVideoStatus(
       }
     }
   } catch (error) {
-    console.error("[v0] FAL status check error:", error)
+    logger.warn("[v0] FAL status check error", { err: toErrStr(error) })
     return { status: "processing", progress: 30 }
   }
 }
@@ -309,7 +310,7 @@ export async function getLipsyncStatus(
       return { status: "processing" }
     }
   } catch (error) {
-    console.error("[lipsync] FAL status error:", error)
+    logger.warn("[lipsync] FAL status error", { err: toErrStr(error) })
     return { status: "processing" }
   }
 }

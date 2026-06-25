@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
 import { withRetry } from "@/lib/anthropic-retry"
@@ -68,7 +69,7 @@ Rules:
 
     return NextResponse.json({ enhanced: enhancedText })
   } catch (error) {
-    console.error("Claude API error:", error)
+    logger.error("Claude API error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: "Failed to enhance prompt" },
       { status: 500 }

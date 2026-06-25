@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { bumpChatUsage, DAILY_CHAT_LIMIT } from "@/lib/credits"
 
@@ -212,7 +213,7 @@ Return ONLY JSON:
 
     return NextResponse.json({ scenes: clean, sceneCount: count, chatRemaining: limit.remaining })
   } catch (error) {
-    console.error("Plan episode error:", error)
+    logger.error("Plan episode error:", { err: toErrStr(error) })
     return NextResponse.json({ error: "Failed to plan" }, { status: 500 })
   }
 }

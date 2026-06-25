@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createInvoice } from "@/lib/qpay"
 import { createClient } from "@/lib/supabase/server"
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       description: plan.description,
     })
   } catch (error) {
-    console.error("Payment create error:", error)
+    logger.error("Payment create error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Payment creation failed" },
       { status: 500 }

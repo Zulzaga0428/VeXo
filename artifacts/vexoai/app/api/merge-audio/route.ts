@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 import { createClient } from "@/lib/supabase/server"
 
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ videoUrl: mergedUrl })
   } catch (error) {
-    console.error("Merge audio error:", error)
+    logger.error("Merge audio error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Merge failed" },
       { status: 500 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { timingSafeEqual } from "crypto"
 import { createClient } from "@/lib/supabase/server"
 import { isAdminEmail } from "@/lib/supabase/admin"
@@ -46,7 +47,7 @@ async function run(request: NextRequest) {
   const limit = Number(request.nextUrl.searchParams.get("limit")) || undefined
 
   const summary = await reconcilePendingCharges({ olderThanMinutes, limit })
-  console.log("[reconcile] summary:", summary)
+  logger.info("[reconcile] summary:", { err: toErrStr(summary) })
   return NextResponse.json({ ok: true, ...summary })
 }
 

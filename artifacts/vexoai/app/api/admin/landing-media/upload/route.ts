@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { isAdminEmail } from "@/lib/supabase/admin"
 import { uploadPublicMedia } from "@/lib/blob-upload"
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ url, media_type: isVideo ? "video" : "image" })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed"
-    console.error("landing-media upload error:", message)
+    logger.error("landing-media upload error:", { err: toErrStr(message) })
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

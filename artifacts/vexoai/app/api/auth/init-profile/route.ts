@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { createClient as createAdminClient } from "@supabase/supabase-js"
 
@@ -81,7 +82,7 @@ export async function POST() {
 
     return NextResponse.json({ created: true, credits: STARTER_CREDITS, username })
   } catch (err) {
-    console.error("[init-profile]", err)
+    logger.error("[init-profile]", { err: toErrStr(err) })
     return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }

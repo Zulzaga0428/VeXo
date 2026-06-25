@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { withRetry } from "@/lib/anthropic-retry"
 
@@ -91,7 +92,7 @@ or if the idea is clear:
       questions,
     })
   } catch (err) {
-    console.error("[v0] clarify-idea error:", err)
+    logger.error("[v0] clarify-idea error:", { err: toErrStr(err) })
     // Fail open: never block generation because clarification errored.
     return NextResponse.json({ needsClarification: false, questions: [] })
   }

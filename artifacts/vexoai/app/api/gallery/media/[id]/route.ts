@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { createClient } from "@/lib/supabase/server"
 import { getPublicUrl } from "@/lib/storage"
 
@@ -19,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const url = getPublicUrl(post.media_url)
     return NextResponse.redirect(url)
   } catch (error) {
-    console.error("Error serving gallery media:", error)
+    logger.error("Error serving gallery media:", { err: toErrStr(error) })
     return new NextResponse("Failed to serve media", { status: 500 })
   }
 }

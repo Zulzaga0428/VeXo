@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import { fal } from "@fal-ai/client"
 import { chargeCredits, refundCredits, CREDIT_COST } from "@/lib/credits"
 
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
       images: images.map((img: any) => ({ url: img.url })),
     })
   } catch (error: any) {
-    console.error("[v0] Image generation error:", error)
+    logger.error("[v0] Image generation error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: error?.message || "Failed to generate image" },
       { status: 500 }

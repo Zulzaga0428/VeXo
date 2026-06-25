@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { logger, toErrStr } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { bumpChatUsage, DAILY_CHAT_LIMIT } from "@/lib/credits"
 
@@ -118,7 +119,7 @@ Rules:
       chatRemaining: limit.remaining,
     })
   } catch (error) {
-    console.error("Chat API error:", error)
+    logger.error("Chat API error:", { err: toErrStr(error) })
     return NextResponse.json(
       { error: "Failed to chat" },
       { status: 500 }
